@@ -1,0 +1,12 @@
+/target
+/data
+config.ini
+
+# Client Build Files
+/static
+
+# Aseprite Files
+*.ase
+
+# Environment Variables
+.env

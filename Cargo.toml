@@ -1,0 +1,9 @@
+[package]
+name = "fileserver"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+actix-web = "4.13.0"
+mime_guess = "2.0.5"
+rust-embed = { version = "8.11.0", features = ["actix"] }
