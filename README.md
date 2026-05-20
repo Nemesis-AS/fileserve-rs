@@ -45,14 +45,7 @@ New-Item data/db.sqlite3 -ItemType File
 sqlx migrate run --database-url sqlite:data/db.sqlite3
 ```
 
-- Generate password hashes for seeding(Optional):
-
-```sh
-cargo run --bin gen_hash <password>
-```
-**Note:** We already have user entries in the seed script. So this step is optional.
-
-- Paste the generated hashes into `migrations/seed.sql`, then seed the DB:
+- Then seed the DB:
 
 ```sh
 sqlite3 data/db.sqlite3 < scripts/seed.sql
