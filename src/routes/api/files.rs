@@ -1,4 +1,3 @@
-// use actix_multipart::form::{MultipartForm, json::Json as MPJson, tempfile::TempFile};
 use actix_web::{
     HttpRequest, HttpResponse, Responder, guard,
     http::header::{ContentLength, ContentType},
@@ -14,27 +13,6 @@ use crate::{
     routes::api::types::ApiResponse,
     utils::tus::{UploadMetadataFields, decode_metadata},
 };
-
-// #[derive(Debug, Deserialize)]
-// struct UploadFormFields {
-//     filename: String,
-// }
-
-// #[derive(Debug, MultipartForm)]
-// struct UploadRequestData {
-//     file: TempFile,
-//     json: MPJson<UploadFormFields>,
-// }
-
-// async fn upload(MultipartForm(form): MultipartForm<UploadRequestData>) -> impl Responder {
-//     println!("Filename: {}", form.json.filename);
-//     println!(
-//         "Filepath: {}",
-//         form.file.file.into_temp_path().to_str().unwrap()
-//     );
-
-//     HttpResponse::Ok().body("Uploading")
-// }
 
 // TUS Spec
 async fn get_server_config() -> impl Responder {
@@ -144,16 +122,21 @@ async fn get_upload_offset(
 ) -> impl Responder {
     let file_id = file_id_param.into_inner();
 
-    let upload_res = sqlx::query("SELECT offset FROM uploads WHERE id = ?")
+    let upload_res = sqlx::query("SELECT offset, file_size FROM uploads WHERE id = ?")
         .bind(file_id)
-        .fetch_one(pool.get_ref())
+        .fetch_optional(pool.get_ref())
         .await;
 
-    if let Err(e) = upload_res {
-        return HttpResponse::InternalServerError().json(ApiResponse::error(&e.to_string()));
-    }
+    let upload = match upload_res {
+        Ok(Some(upload)) => upload,
+        Ok(None) => {
+            return HttpResponse::NotFound().json(ApiResponse::error("Upload not found"));
+        }
+        Err(e) => {
+            return HttpResponse::InternalServerError().json(ApiResponse::error(&e.to_string()));
+        }
+    };
 
-    let upload = upload_res.unwrap();
     let offset: i64 = match upload.try_get("offset") {
         Ok(v) => v,
         Err(e) => {
@@ -161,9 +144,28 @@ async fn get_upload_offset(
         }
     };
 
-    HttpResponse::Ok()
+    let file_size: Option<i64> = match upload.try_get("file_size") {
+        Ok(v) => v,
+        Err(e) => {
+            return HttpResponse::InternalServerError().json(ApiResponse::error(&e.to_string()));
+        }
+    };
+
+    let mut response = HttpResponse::Ok();
+    response
         .append_header(("Upload-Offset", offset))
-        .finish()
+        .append_header(("Cache-Control", "no-store"));
+
+    match file_size {
+        Some(size) => {
+            response.append_header(("Upload-Length", size));
+        }
+        None => {
+            response.append_header(("Upload-Defer-Length", "1"));
+        }
+    }
+
+    response.finish()
 }
 
 async fn upload_chunk(
@@ -217,8 +219,24 @@ async fn upload_chunk(
         }
     };
 
-    let upload_offset: i64 = upload.try_get("offset").unwrap();
-    let file_size: i64 = upload.try_get("file_size").unwrap();
+    let upload_offset: i64 = match upload.try_get("offset") {
+        Ok(v) => v,
+        Err(e) => {
+            return HttpResponse::InternalServerError().json(ApiResponse::error(&e.to_string()));
+        }
+    };
+
+    let file_size: Option<i64> = match upload.try_get("file_size") {
+        Ok(v) => v,
+        Err(e) => {
+            return HttpResponse::InternalServerError().json(ApiResponse::error(&e.to_string()));
+        }
+    };
+
+    let Some(file_size) = file_size else {
+        return HttpResponse::Conflict()
+            .json(ApiResponse::error("Upload-Length has not been set for this upload"));
+    };
 
     if req_upload_offset != upload_offset {
         return HttpResponse::Conflict().finish();
@@ -269,6 +287,6 @@ pub fn register(config: &mut ServiceConfig) {
             )
             .route("", web::post().to(create_upload))
             .route("/{upload_id}", web::head().to(get_upload_offset))
-            .route("/{upload_id}", web::post().to(upload_chunk)),
+            .route("/{upload_id}", web::patch().to(upload_chunk)),
     );
 }

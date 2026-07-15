@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-actix-multipart = "0.7.2"
 actix-web = { version = "4.13.0", features = ["cookies"] }
 base64 = "0.22.1"
 bcrypt = "0.19.1"
