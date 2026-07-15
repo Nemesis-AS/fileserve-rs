@@ -5,12 +5,14 @@ mod models;
 mod routes;
 mod utils;
 
+use actix_cors::Cors;
 use actix_web::{App, HttpServer, web};
 use rust_embed::Embed;
 use sqlx::SqlitePool;
 
 use crate::config::AppConfig;
 use crate::routes::register;
+use crate::utils::tus::ChecksumCache;
 
 #[derive(Embed)]
 #[folder = "static/"]
@@ -28,13 +30,19 @@ async fn main() -> std::io::Result<()> {
     let pool = SqlitePool::connect("sqlite:data/db.sqlite3")
         .await
         .expect("Failed to connect to db!");
+    let checksum_cache = web::Data::new(ChecksumCache::default());
 
     println!("Started server at PORT {}!", port);
     HttpServer::new(move || {
+        // @todo! Use apt CORS policy
+        let cors = Cors::permissive();
+
         App::new()
-            .configure(register)
+            .wrap(cors)
+            .configure(|cfg| register(cfg, &config))
             .app_data(web::Data::new(pool.clone()))
             .app_data(web::Data::new(config.clone()))
+            .app_data(checksum_cache.clone())
     })
     .bind(("0.0.0.0", port))?
     .run()
