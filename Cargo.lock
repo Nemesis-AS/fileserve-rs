@@ -803,6 +803,7 @@ dependencies = [
  "base64",
  "bcrypt",
  "chrono",
+ "dotenvy",
  "jsonwebtoken",
  "mime_guess",
  "rust-embed",

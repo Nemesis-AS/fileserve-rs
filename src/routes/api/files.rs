@@ -9,9 +9,7 @@ use sqlx::{Pool, Row, Sqlite};
 use uuid::Uuid;
 
 use crate::{
-    middlewares::tus_resumable,
-    routes::api::types::ApiResponse,
-    utils::tus::{UploadMetadataFields, decode_metadata},
+    config::AppConfig, middlewares::tus_resumable, routes::api::types::ApiResponse, utils::tus::{UploadMetadataFields, decode_metadata},
 };
 
 // TUS Spec
@@ -24,9 +22,7 @@ async fn get_server_config() -> impl Responder {
         .finish()
 }
 
-async fn create_upload(req: HttpRequest, pool: web::Data<Pool<Sqlite>>) -> impl Responder {
-    const TUS_MAX_SIZE: i64 = 5 * 1024 * 1024 * 1024; // 5 GiB, @todo! Move to global config
-
+async fn create_upload(req: HttpRequest, pool: web::Data<Pool<Sqlite>>, config: web::Data<AppConfig>) -> impl Responder {
     let upload_length_header = req
         .headers()
         .get("Upload-Length")
@@ -66,9 +62,9 @@ async fn create_upload(req: HttpRequest, pool: web::Data<Pool<Sqlite>>) -> impl 
                 .json(ApiResponse::error("Upload-Length cannot be negative"));
         }
 
-        if length > TUS_MAX_SIZE {
+        if length > config.tus_max_size as i64 {
             return HttpResponse::PayloadTooLarge()
-                .append_header(("Tus-Max-Size", TUS_MAX_SIZE.to_string()))
+                .append_header(("Tus-Max-Size", config.tus_max_size.to_string()))
                 .json(ApiResponse::error("Upload-Length exceeds Tus-Max-Size"));
         }
 

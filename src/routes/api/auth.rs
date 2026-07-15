@@ -5,6 +5,7 @@ use jsonwebtoken::{EncodingKey, Header, encode};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, Pool, Sqlite};
 
+use crate::config::AppConfig;
 use crate::extractors::{AuthUser, JwtClaims};
 use crate::routes::api::types::ApiResponse;
 
@@ -24,7 +25,7 @@ struct AuthResponse {
     token: String,
 }
 
-async fn login(body: web::Json<LoginRequestBody>, pool: web::Data<Pool<Sqlite>>) -> impl Responder {
+async fn login(body: web::Json<LoginRequestBody>, pool: web::Data<Pool<Sqlite>>, config: web::Data<AppConfig>) -> impl Responder {
     let result = sqlx::query_as::<_, UserCreds>("SELECT password FROM users WHERE username = ?")
         .bind(&body.username)
         .fetch_one(pool.get_ref())
@@ -48,8 +49,7 @@ async fn login(body: web::Json<LoginRequestBody>, pool: web::Data<Pool<Sqlite>>)
                 let token: String = match encode(
                     &Header::default(),
                     &claims,
-                    // @todo! Get secret from config/env
-                    &EncodingKey::from_secret("secret".as_ref()),
+                    &EncodingKey::from_secret(&config.jwt_secret.as_bytes()),
                 ) {
                     Ok(tk) => tk,
                     Err(_) => {

@@ -1,9 +1,9 @@
-use actix_web::{FromRequest, HttpRequest, HttpResponse, ResponseError, dev::Payload};
-use std::future::{Ready, ready};
+use actix_web::{FromRequest, HttpRequest, HttpResponse, ResponseError, dev::Payload, web};
 use jsonwebtoken::{DecodingKey, Validation, decode};
 use serde::{Deserialize, Serialize};
+use std::future::{Ready, ready};
 
-use crate::routes::api::types::ApiResponse;
+use crate::{config::AppConfig, routes::api::types::ApiResponse};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct JwtClaims {
@@ -34,17 +34,22 @@ impl FromRequest for AuthUser {
     type Future = Ready<Result<Self, Self::Error>>;
 
     fn from_request(req: &HttpRequest, _: &mut Payload) -> Self::Future {
+        let Some(config) = req.app_data::<web::Data<AppConfig>>() else {
+            return ready(Err(AuthError("Missing app config".into()).into()));
+        };
+
         let Some(cookie) = req.cookie("auth_token") else {
             return ready(Err(AuthError("Missing auth token".into()).into()));
         };
 
-        // @todo! Get secret from config/env
         match decode::<JwtClaims>(
             cookie.value(),
-            &DecodingKey::from_secret("secret".as_ref()),
+            &DecodingKey::from_secret(config.jwt_secret.as_bytes()),
             &Validation::default(),
         ) {
-            Ok(data) => ready(Ok(AuthUser { username: data.claims.username })),
+            Ok(data) => ready(Ok(AuthUser {
+                username: data.claims.username,
+            })),
             Err(_) => ready(Err(AuthError("Invalid or expired token".into()).into())),
         }
     }
