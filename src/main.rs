@@ -1,4 +1,6 @@
 mod extractors;
+mod models;
+mod middlewares;
 mod routes;
 mod utils;
 
