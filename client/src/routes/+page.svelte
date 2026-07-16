@@ -1,9 +1,11 @@
-<script>
-  import { resolve } from "$app/paths";
+<script lang="ts">
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { browser } from '$app/environment';
+	import { authStore } from '$lib/stores/auth.svelte';
 
-  const filesLink = resolve("/files");
+	if (browser) {
+		if (authStore.isLoggedIn) goto(resolve('/files/my'), { replaceState: true });
+		else goto(resolve('/login'), { replaceState: true });
+	}
 </script>
-
-<h1>Welcome to SvelteKit</h1>
-<p>Visit <a href="https://svelte.dev/docs/kit">svelte.dev/docs/kit</a> to read the documentation</p>
-<a href={filesLink} class="text-blue-500">Go to files</a>

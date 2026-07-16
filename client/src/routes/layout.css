@@ -1,1 +1,219 @@
 @import 'tailwindcss';
+
+/*
+ * Everything the app looks like now lives with the component that renders it, in
+ * $lib/components/ui. What stays here is only what Tailwind utilities genuinely cannot
+ * express:
+ *
+ *   1. the design tokens themselves (runtime-swapped custom properties)
+ *   2. the @theme bridge that republishes them as utilities
+ *   3. a few base/reset rules
+ *   4. custom scrollbars (::-webkit-scrollbar has no utility equivalent)
+ */
+
+/*
+ * Dark mode is an attribute on <html> (set by routes/+layout.svelte), not the OS
+ * preference. Rebind Tailwind's `dark:` variant to match, or `dark:` utilities would
+ * silently follow prefers-color-scheme and ignore the in-app toggle.
+ */
+@custom-variant dark ([data-theme='dark'] &);
+
+/* ─── Design tokens ─────────────────────────────────────────── */
+
+:root {
+	/*
+	 * Load-bearing: Tailwind's preflight resolves --default-font-family through
+	 * --font-sans (and code/pre through --font-mono). Because this :root block is
+	 * unlayered it overrides Tailwind's own theme defaults — delete these and the
+	 * whole app silently changes typeface.
+	 */
+	--font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+	--font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+
+	/* Light */
+	--bg: #ffffff;
+	--bg-elev: #fafafa;
+	--bg-sunken: #f4f4f5;
+	--bg-overlay: rgba(15, 15, 17, 0.32);
+	--border: #ececec;
+	--border-strong: #d4d4d4;
+	--text: #18181b;
+	--text-muted: #71717a;
+	--text-faint: #a1a1aa;
+	--accent: #2563eb;
+	--accent-soft: #eff4ff;
+	--accent-text: #1d4ed8;
+	--row-hover: #f5f5f6;
+	--row-active: #eef2ff;
+	--row-active-bd: #c7d2fe;
+	--danger: #dc2626;
+	--danger-soft: #fef2f2;
+	--success: #16a34a;
+	--warn: #d97706;
+	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+	--shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08), 0 0 0 0.5px rgba(0, 0, 0, 0.08);
+	--shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.18), 0 0 0 0.5px rgba(0, 0, 0, 0.08);
+
+	/* Density (cozy default) */
+	--row-h: 40px;
+	--gap-cell: 12px;
+	--pad-page: 24px;
+
+	color-scheme: light;
+}
+
+[data-theme='dark'] {
+	--bg: #0c0c0e;
+	--bg-elev: #131316;
+	--bg-sunken: #18181b;
+	--bg-overlay: rgba(0, 0, 0, 0.55);
+	--border: #232327;
+	--border-strong: #3a3a40;
+	--text: #ededee;
+	--text-muted: #a1a1aa;
+	--text-faint: #62626a;
+	--accent: #6691ff;
+	--accent-soft: rgba(102, 145, 255, 0.12);
+	--accent-text: #a5bdff;
+	--row-hover: #1a1a1d;
+	--row-active: rgba(102, 145, 255, 0.1);
+	--row-active-bd: rgba(102, 145, 255, 0.35);
+	--danger: #f87171;
+	--danger-soft: rgba(248, 113, 113, 0.1);
+	--success: #4ade80;
+	--warn: #fbbf24;
+	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3), 0 0 0 0.5px rgba(255, 255, 255, 0.06);
+	--shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4), 0 0 0 0.5px rgba(255, 255, 255, 0.08);
+	--shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.6), 0 0 0 0.5px rgba(255, 255, 255, 0.08);
+	color-scheme: dark;
+}
+
+[data-density='compact'] {
+	--row-h: 30px;
+	--gap-cell: 10px;
+}
+[data-density='cozy'] {
+	--row-h: 40px;
+	--gap-cell: 12px;
+}
+[data-density='comfy'] {
+	--row-h: 52px;
+	--gap-cell: 14px;
+}
+
+/* ─── Tailwind theme tokens (map filer CSS vars → utilities) ─── */
+/*
+ * These create utility classes that reference the CSS custom properties defined above.
+ * Because custom properties cascade, the dark-mode overrides in [data-theme='dark']
+ * propagate through automatically — bg-surface in dark mode resolves
+ * bg-surface → var(--color-surface) → var(--bg) → #0c0c0e — so components need no
+ * `dark:` variant for anything that is purely a token swap.
+ */
+@theme inline {
+	/* Surfaces */
+	--color-surface: var(--bg);
+	--color-elevated: var(--bg-elev);
+	--color-sunken: var(--bg-sunken);
+	--color-overlay: var(--bg-overlay);
+
+	/* Borders */
+	--color-edge: var(--border);
+	--color-edge-strong: var(--border-strong);
+
+	/* Text */
+	--color-ink: var(--text);
+	--color-ink-muted: var(--text-muted);
+	--color-ink-faint: var(--text-faint);
+
+	/* Accent */
+	--color-accent: var(--accent);
+	--color-accent-soft: var(--accent-soft);
+	--color-accent-ink: var(--accent-text);
+
+	/* Row states */
+	--color-row-hover: var(--row-hover);
+	--color-row-active: var(--row-active);
+	--color-row-active-bd: var(--row-active-bd);
+
+	/* Semantic */
+	--color-danger: var(--danger);
+	--color-danger-soft: var(--danger-soft);
+	--color-ok: var(--success);
+	--color-warn: var(--warn);
+
+	/* Font stacks */
+	--font-system:
+		-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+	--font-code: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+
+	/* Shadows (kept as CSS var references so dark overrides propagate) */
+	--shadow-xs: var(--shadow-sm);
+	--shadow-pop: var(--shadow-md);
+	--shadow-lift: var(--shadow-lg);
+
+	/* Density — these track [data-density], so h-row/px-cell restyle with no JS */
+	--spacing-row: var(--row-h);
+	--spacing-cell: var(--gap-cell);
+	--spacing-page: var(--pad-page);
+
+	/* Animation */
+	--animate-fade-in: fade-in 0.2s ease-out;
+}
+
+@keyframes fade-in {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
+}
+
+/* ─── Base ───────────────────────────────────────────────────── */
+
+html,
+body {
+	height: 100%;
+}
+
+body {
+	font-size: 13.5px;
+	line-height: 1.45;
+	color: var(--text);
+	background: var(--bg);
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+/* Global focus ring — every interactive element inherits it. */
+:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 1px;
+	border-radius: 4px;
+}
+
+/* ─── Scrollbars ─────────────────────────────────────────────── */
+
+/*
+ * Thin overlay scrollbars that only tint on hover. Tailwind has no ::-webkit-scrollbar
+ * utilities, so this stays hand-written — but it is one class now instead of the same
+ * four rules repeated across five selectors. Apply `scroll-area` to any scroll container.
+ */
+.scroll-area::-webkit-scrollbar {
+	width: 10px;
+	height: 10px;
+}
+.scroll-area::-webkit-scrollbar-thumb {
+	background: transparent;
+	border: 3px solid transparent;
+	border-radius: 999px;
+	background-clip: content-box;
+}
+.scroll-area:hover::-webkit-scrollbar-thumb {
+	background: rgba(0, 0, 0, 0.18);
+	background-clip: content-box;
+}
+[data-theme='dark'] .scroll-area:hover::-webkit-scrollbar-thumb {
+	background: rgba(255, 255, 255, 0.16);
+	background-clip: content-box;
+}
