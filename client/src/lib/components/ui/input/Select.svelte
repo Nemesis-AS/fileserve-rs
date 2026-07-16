@@ -15,7 +15,10 @@
 		variants: {
 			variant: {
 				default: '',
-				filter: 'h-[30px] w-auto appearance-none py-0 pr-7 pl-[10px] text-[12.5px]'
+				// Height/font come from size="sm" below — NOT from here. tv applies the
+				// extended recipe's `size` after this `variant`, so anything set here that
+				// `size` also sets would lose.
+				filter: 'w-auto appearance-none py-0 pr-7 pl-[10px]'
 			}
 		},
 		defaultVariants: { variant: 'default' }
@@ -29,10 +32,12 @@
 		children,
 		...rest
 	}: SelectProps & { variant?: 'default' | 'filter' } = $props();
+
+	const effSize = $derived(size ?? (variant === 'filter' ? 'sm' : 'md'));
 </script>
 
 {#snippet field()}
-	<select bind:value class={select({ size, variant, class: klass })} {...rest}>
+	<select bind:value class={select({ size: effSize, variant, class: klass })} {...rest}>
 		{@render children()}
 	</select>
 {/snippet}
@@ -40,8 +45,13 @@
 {#if variant === 'filter'}
 	<span class="relative inline-flex items-center">
 		{@render field()}
+		<!--
+		  11px, not 10px: the original was a background-image at `right 10px center`, and
+		  background-origin is the padding box — so it cleared the 1px border too. This svg
+		  is positioned against the border box, so it has to add that pixel back.
+		-->
 		<svg
-			class="pointer-events-none absolute right-[10px]"
+			class="pointer-events-none absolute right-[11px]"
 			width="10"
 			height="6"
 			viewBox="0 0 10 6"

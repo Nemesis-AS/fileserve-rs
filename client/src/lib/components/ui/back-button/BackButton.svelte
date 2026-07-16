@@ -12,8 +12,11 @@
 		base: 'flex cursor-pointer items-center gap-1 rounded-md border-0 bg-transparent py-1 pr-2 pl-1 text-[13px] whitespace-nowrap text-ink-muted transition-[background-color,color] duration-100 hover:bg-row-hover hover:text-ink [&_svg]:size-[14px]'
 	});
 
-	let { class: klass, children, ...rest }: WithClass<HTMLButtonAttributes> & { children: Snippet } =
-		$props();
+	let {
+		class: klass,
+		children,
+		...rest
+	}: WithClass<HTMLButtonAttributes> & { children: Snippet } = $props();
 </script>
 
 <button type="button" class={backButton({ class: klass })} {...rest}>

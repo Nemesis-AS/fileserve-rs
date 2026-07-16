@@ -70,7 +70,10 @@
 			</Button>
 		{/if}
 
-		<div class="relative" use:clickOutside={{ enabled: menuOpen, onOutside: () => (menuOpen = false) }}>
+		<div
+			class="relative"
+			use:clickOutside={{ enabled: menuOpen, onOutside: () => (menuOpen = false) }}
+		>
 			<IconButton class="p-0.5" onclick={() => (menuOpen = !menuOpen)} aria-label="Account menu">
 				<Avatar name={user.name} />
 			</IconButton>

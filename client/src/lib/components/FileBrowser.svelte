@@ -50,10 +50,19 @@
 		const arr = files.slice();
 		arr.sort((a, b) => {
 			let av: string | number, bv: string | number;
-			if (sortKey === 'name') { av = a.name.toLowerCase(); bv = b.name.toLowerCase(); }
-			else if (sortKey === 'size') { av = a.size; bv = b.size; }
-			else if (sortKey === 'type') { av = a.ext; bv = b.ext; }
-			else { av = a.modified; bv = b.modified; }
+			if (sortKey === 'name') {
+				av = a.name.toLowerCase();
+				bv = b.name.toLowerCase();
+			} else if (sortKey === 'size') {
+				av = a.size;
+				bv = b.size;
+			} else if (sortKey === 'type') {
+				av = a.ext;
+				bv = b.ext;
+			} else {
+				av = a.modified;
+				bv = b.modified;
+			}
 			if (av < bv) return sortDir === 'asc' ? -1 : 1;
 			if (av > bv) return sortDir === 'asc' ? 1 : -1;
 			return 0;
@@ -65,7 +74,10 @@
 
 	$effect(() => {
 		// Reset paging when list changes
-		files.length; sortKey; sortDir; view;
+		files.length;
+		sortKey;
+		sortDir;
+		view;
 		pageSize = 40;
 	});
 
@@ -89,12 +101,20 @@
 
 	function setSort(k: SortKey) {
 		if (k === sortKey) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
-		else { sortKey = k; sortDir = k === 'name' ? 'asc' : 'desc'; }
+		else {
+			sortKey = k;
+			sortDir = k === 'name' ? 'asc' : 'desc';
+		}
 	}
 
-	const sortLabel = $derived({
-		name: 'Name', type: 'Type', size: 'Size', modified: 'Modified'
-	}[sortKey]);
+	const sortLabel = $derived(
+		{
+			name: 'Name',
+			type: 'Type',
+			size: 'Size',
+			modified: 'Modified'
+		}[sortKey]
+	);
 
 	const t = table({ variant: 'files' });
 
@@ -120,7 +140,13 @@
 		<Segmented value={view} options={VIEW_OPTIONS} onchange={(v) => onViewChange?.(v)} class="mr-2">
 			{#snippet item(v)}
 				{#if v === 'list'}
-					<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+					<svg
+						viewBox="0 0 16 16"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.6"
+						stroke-linecap="round"
+					>
 						<path d="M3 4h10M3 8h10M3 12h10" />
 					</svg>
 				{:else}
@@ -141,7 +167,10 @@
 			onclick={() => setSort(sortKey)}
 		>
 			{sortLabel}
-			{#if sortDir === 'desc'}<Icon name="ArrowDown" size={13} />{:else}<Icon name="ArrowUp" size={13} />{/if}
+			{#if sortDir === 'desc'}<Icon name="ArrowDown" size={13} />{:else}<Icon
+					name="ArrowUp"
+					size={13}
+				/>{/if}
 		</span>
 	</div>
 
@@ -151,16 +180,24 @@
 				<thead>
 					<tr>
 						<th class={t.th()} onclick={() => setSort('name')}>
-							Name {#if sortKey === 'name'}<span class="ml-0.5 text-[11px] text-accent">{sortDir === 'asc' ? '↑' : '↓'}</span>{/if}
+							Name {#if sortKey === 'name'}<span class="ml-0.5 text-[11px] text-accent"
+									>{sortDir === 'asc' ? '↑' : '↓'}</span
+								>{/if}
 						</th>
 						<th class={t.th({ class: 'w-[100px]' })} onclick={() => setSort('type')}>
-							Type {#if sortKey === 'type'}<span class="ml-0.5 text-[11px] text-accent">{sortDir === 'asc' ? '↑' : '↓'}</span>{/if}
+							Type {#if sortKey === 'type'}<span class="ml-0.5 text-[11px] text-accent"
+									>{sortDir === 'asc' ? '↑' : '↓'}</span
+								>{/if}
 						</th>
 						<th class={t.th({ class: 'w-[110px]' })} onclick={() => setSort('size')}>
-							Size {#if sortKey === 'size'}<span class="ml-0.5 text-[11px] text-accent">{sortDir === 'asc' ? '↑' : '↓'}</span>{/if}
+							Size {#if sortKey === 'size'}<span class="ml-0.5 text-[11px] text-accent"
+									>{sortDir === 'asc' ? '↑' : '↓'}</span
+								>{/if}
 						</th>
 						<th class={t.th({ class: 'w-[130px]' })} onclick={() => setSort('modified')}>
-							Modified {#if sortKey === 'modified'}<span class="ml-0.5 text-[11px] text-accent">{sortDir === 'asc' ? '↑' : '↓'}</span>{/if}
+							Modified {#if sortKey === 'modified'}<span class="ml-0.5 text-[11px] text-accent"
+									>{sortDir === 'asc' ? '↑' : '↓'}</span
+								>{/if}
 						</th>
 						{#if section === 'public'}<th class={t.th({ class: 'w-[110px]' })}>Owner</th>{/if}
 						<th class={t.th({ class: 'w-[130px]' })}></th>
@@ -183,7 +220,9 @@
 							<td class={t.td()}>
 								<div class="flex min-w-0 items-center gap-[9px]">
 									<FileIcon file={f} />
-									<span class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{f.name}</span>
+									<span class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap"
+										>{f.name}</span
+									>
 									{#if f.public && section !== 'public'}
 										<span
 											class="ml-1.5 shrink-0 rounded-[3px] bg-accent-soft px-[5px] py-px text-[9.5px] font-semibold whitespace-nowrap text-accent-ink uppercase"
@@ -215,7 +254,12 @@
 									<IconButton variant="row" size="sm" title="Open" onclick={() => onView(f)}>
 										<Icon name="Eye" size={14} />
 									</IconButton>
-									<IconButton variant="row" size="sm" title="Download" onclick={() => onDownload(f)}>
+									<IconButton
+										variant="row"
+										size="sm"
+										title="Download"
+										onclick={() => onDownload(f)}
+									>
 										<Icon name="Download" size={14} />
 									</IconButton>
 									{#if section !== 'trash'}
@@ -223,7 +267,12 @@
 											<Icon name="Pencil" size={14} />
 										</IconButton>
 									{/if}
-									<IconButton variant="row" size="sm" title="Properties" onclick={() => onProperties(f)}>
+									<IconButton
+										variant="row"
+										size="sm"
+										title="Properties"
+										onclick={() => onProperties(f)}
+									>
 										<Icon name="Info" size={14} />
 									</IconButton>
 									<IconButton variant="row" size="sm" title="Delete" onclick={() => onDelete(f)}>

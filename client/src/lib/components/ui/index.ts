@@ -7,7 +7,13 @@
  *
  *   import { Button, Modal, Table } from '$lib/components/ui';
  */
-export { Button, button, type ButtonProps, type ButtonVariant, type ButtonSize } from './button/index.js';
+export {
+	Button,
+	button,
+	type ButtonProps,
+	type ButtonVariant,
+	type ButtonSize
+} from './button/index.js';
 export {
 	IconButton,
 	iconButton,
@@ -15,7 +21,14 @@ export {
 	type IconButtonVariant,
 	type IconButtonSize
 } from './icon-button/index.js';
-export { Input, Select, input, type InputProps, type SelectProps, type InputSize } from './input/index.js';
+export {
+	Input,
+	Select,
+	input,
+	type InputProps,
+	type SelectProps,
+	type InputSize
+} from './input/index.js';
 export { Field, Hint, type FieldProps } from './field/index.js';
 export { Checkbox } from './checkbox/index.js';
 export { Badge, badge, type BadgeProps, type BadgeTone } from './badge/index.js';

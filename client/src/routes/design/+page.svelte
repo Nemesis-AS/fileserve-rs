@@ -155,7 +155,8 @@
 		<p class="mb-6 max-w-[640px] text-[13px] text-ink-muted">
 			Every colour is a CSS custom property in
 			<code class="font-code text-[12px]">routes/layout.css</code>, re-exported to Tailwind through
-			<code class="font-code text-[12px]">@theme inline</code>. Dark mode swaps those variables under
+			<code class="font-code text-[12px]">@theme inline</code>. Dark mode swaps those variables
+			under
 			<code class="font-code text-[12px]">[data-theme='dark']</code>, so the utilities below need no
 			<code class="font-code text-[12px]">dark:</code> variant to change.
 		</p>
@@ -322,7 +323,13 @@
 					>
 						{#snippet item(v)}
 							{#if v === 'list'}
-								<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+								<svg
+									viewBox="0 0 16 16"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="1.6"
+									stroke-linecap="round"
+								>
 									<path d="M3 4h10M3 8h10M3 12h10" />
 								</svg>
 							{:else}

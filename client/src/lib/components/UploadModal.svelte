@@ -43,18 +43,21 @@
 
 	function simulateUpload(id: string) {
 		const speed = 8 + Math.random() * 14;
-		timers.set(id, setInterval(() => {
-			queue = queue.map((it) => {
-				if (it.id !== id || it.state !== 'uploading') return it;
-				const next = Math.min(100, it.progress + speed);
-				if (next >= 100) {
-					clearInterval(timers.get(id)!);
-					timers.delete(id);
-					return { ...it, progress: 100, state: Math.random() < 0.07 ? 'error' : 'done' };
-				}
-				return { ...it, progress: next };
-			});
-		}, 220));
+		timers.set(
+			id,
+			setInterval(() => {
+				queue = queue.map((it) => {
+					if (it.id !== id || it.state !== 'uploading') return it;
+					const next = Math.min(100, it.progress + speed);
+					if (next >= 100) {
+						clearInterval(timers.get(id)!);
+						timers.delete(id);
+						return { ...it, progress: 100, state: Math.random() < 0.07 ? 'error' : 'done' };
+					}
+					return { ...it, progress: next };
+				});
+			}, 220)
+		);
 	}
 
 	// Prefill with demo items
@@ -64,8 +67,11 @@
 			{ name: 'IMG_4128.jpeg', size: 2_982_001 }
 		];
 		const items: UploadItem[] = demo.map((f, i) => ({
-			id: 'qd-' + i, name: f.name, size: f.size,
-			ext: extOf(f.name), color: fileColor(f.name),
+			id: 'qd-' + i,
+			name: f.name,
+			size: f.size,
+			ext: extOf(f.name),
+			color: fileColor(f.name),
 			progress: i === 0 ? 100 : 38,
 			state: i === 0 ? 'done' : 'uploading'
 		}));
@@ -88,7 +94,10 @@
 
 	function removeItem(id: string) {
 		const t = timers.get(id);
-		if (t) { clearInterval(t); timers.delete(id); }
+		if (t) {
+			clearInterval(t);
+			timers.delete(id);
+		}
 		queue = queue.filter((it) => it.id !== id);
 	}
 
@@ -111,7 +120,11 @@
 		ondrop={onDrop}
 		onclick={() => inputEl?.click()}
 	>
-		<Icon name="Upload" size={28} class="mx-auto" />
+		<!--
+		  No mx-auto: preflight sets svg{display:block}, so the dropzone's text-align:center
+		  never centred this icon — it sat at the left edge. Centring it would be a redesign.
+		-->
+		<Icon name="Upload" size={28} />
 		<div class="text-[13px] font-medium text-ink">
 			Drop files here or <span class="text-accent-ink">browse</span>
 		</div>
@@ -125,7 +138,8 @@
 	{#if queue.length > 0}
 		<div class="mt-[18px] mb-1 flex items-baseline justify-between text-[12px] text-ink-muted">
 			<span class="font-medium text-ink">
-				Queue · {queue.length} {queue.length === 1 ? 'file' : 'files'}
+				Queue · {queue.length}
+				{queue.length === 1 ? 'file' : 'files'}
 			</span>
 			<span>{allDone ? `${doneCount} uploaded` : `${Math.round(totalProgress)}%`}</span>
 		</div>
@@ -134,7 +148,9 @@
 		<div class="flex flex-col gap-2">
 			{#each queue as it (it.id)}
 				<!-- .upload-row: icon | name+progress | pct | remove -->
-				<div class="grid grid-cols-[22px_1fr_auto_auto] items-center gap-2.5 px-1 py-2 text-[12.5px]">
+				<div
+					class="grid grid-cols-[22px_1fr_auto_auto] items-center gap-2.5 px-1 py-2 text-[12.5px]"
+				>
 					<div
 						class="grid size-[22px] shrink-0 place-items-center rounded-[5px] font-code text-[9px] font-bold text-white"
 						style="background: {it.color};"

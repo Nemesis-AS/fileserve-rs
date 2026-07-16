@@ -20,13 +20,13 @@ export const table = tv({
 			files: {
 				th: 'sticky top-0 z-2 h-[34px] cursor-pointer border-b border-edge bg-surface px-cell text-[12px] select-none hover:text-ink',
 				td: 'h-row border-b border-edge px-cell whitespace-nowrap',
-				tr: 'cursor-default transition-colors duration-[80ms] last:[&>td]:border-b-0 hover:bg-row-hover data-[active=1]:bg-row-active'
+				tr: 'cursor-default transition-colors duration-[80ms] hover:bg-row-hover data-[active=1]:bg-row-active last:[&>td]:border-b-0'
 			},
 			users: {
 				root: 'overflow-hidden rounded-[10px] border border-edge bg-surface',
 				th: 'border-b border-edge bg-elevated px-[14px] py-2.5 text-[12px]',
 				td: 'border-b border-edge px-[14px] py-3',
-				tr: 'last:[&>td]:border-b-0 hover:bg-row-hover'
+				tr: 'hover:bg-row-hover last:[&>td]:border-b-0'
 			}
 		}
 	},

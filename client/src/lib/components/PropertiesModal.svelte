@@ -46,7 +46,9 @@
 		<dd class="m-0 break-words text-ink tabular-nums">{file.name}</dd>
 
 		<dt class="font-normal text-ink-muted">Type</dt>
-		<dd class="m-0 break-words text-ink tabular-nums">{file.ext.toUpperCase()} · {file.category}</dd>
+		<dd class="m-0 break-words text-ink tabular-nums">
+			{file.ext.toUpperCase()} · {file.category}
+		</dd>
 
 		<dt class="font-normal text-ink-muted">Size</dt>
 		<dd class="m-0 break-words text-ink tabular-nums">
@@ -58,7 +60,9 @@
 		<dd class="m-0 break-words text-ink tabular-nums">{fmtDateLong(file.modified)}</dd>
 
 		<dt class="font-normal text-ink-muted">Owner</dt>
-		<dd class="m-0 break-words text-ink tabular-nums">{file.owner === 'me' ? 'You' : file.owner}</dd>
+		<dd class="m-0 break-words text-ink tabular-nums">
+			{file.owner === 'me' ? 'You' : file.owner}
+		</dd>
 
 		<dt class="font-normal text-ink-muted">Path</dt>
 		<dd class="m-0 break-words text-ink tabular-nums">
@@ -91,12 +95,7 @@
 		>
 			<Icon name="Link" size={14} class="shrink-0" />
 			<code class="flex-1 overflow-hidden text-ellipsis">{shareUrl}</code>
-			<IconButton
-				variant="row"
-				size="sm"
-				title={copied ? 'Copied!' : 'Copy link'}
-				onclick={copy}
-			>
+			<IconButton variant="row" size="sm" title={copied ? 'Copied!' : 'Copy link'} onclick={copy}>
 				{#if copied}
 					<Icon name="Check" size={14} class="text-ok" />
 				{:else}

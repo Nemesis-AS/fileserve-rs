@@ -24,8 +24,12 @@ export const iconButton = tv({
 			// .gridtile__action — sits on top of imagery, so it carries its own scrim
 			overlay: 'bg-black/55 text-white backdrop-blur-[8px] hover:bg-black/75'
 		},
+		// The `[&_svg]` sizes mirror the old `.icon-btn svg` / `.row-action svg` /
+		// `.gridtile__action svg` rules. `xs` is 12px because `.upload-row__x` never had an
+		// svg rule — its icon size came from the Icon's own `size={12}` attribute, and a CSS
+		// size here would override that attribute and silently enlarge it.
 		size: {
-			xs: 'size-[22px] rounded-[5px] [&_svg]:size-[14px]',
+			xs: 'size-[22px] rounded-[5px] [&_svg]:size-3',
 			sm: 'size-[26px] rounded-[6px] [&_svg]:size-[14px]',
 			md: 'size-[30px] rounded-[7px] [&_svg]:size-4'
 		}

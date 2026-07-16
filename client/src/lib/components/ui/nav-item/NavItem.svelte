@@ -32,12 +32,7 @@
 	const s = navItem();
 </script>
 
-<button
-	type="button"
-	class={s.root({ class: klass })}
-	data-active={active ? '1' : '0'}
-	{...rest}
->
+<button type="button" class={s.root({ class: klass })} data-active={active ? '1' : '0'} {...rest}>
 	<span class={s.icon()}>{@render icon()}</span>
 	{@render children()}
 	{#if count !== undefined}<span class={s.count()}>{count}</span>{/if}

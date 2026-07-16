@@ -15,7 +15,8 @@ export const button = tv({
 	variants: {
 		variant: {
 			solid: 'bg-ink text-surface hover:opacity-[.88]',
-			ghost: 'border border-edge-strong bg-transparent text-ink hover:bg-row-hover hover:opacity-100',
+			ghost:
+				'border border-edge-strong bg-transparent text-ink hover:bg-row-hover hover:opacity-100',
 			danger: 'bg-danger text-white hover:opacity-90'
 		},
 		size: {

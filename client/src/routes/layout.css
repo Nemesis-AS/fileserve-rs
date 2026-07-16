@@ -171,25 +171,33 @@
 
 /* ─── Base ───────────────────────────────────────────────────── */
 
-html,
-body {
-	height: 100%;
-}
+/*
+ * These MUST live in @layer base. Unlayered CSS outranks every Tailwind layer, so a bare
+ * `:focus-visible` here would beat the `outline-0` utility on inputs — which previously
+ * won purely by coming later in this file — and inputs would grow a focus ring they never
+ * had. In @layer base, utilities correctly take precedence.
+ */
+@layer base {
+	html,
+	body {
+		height: 100%;
+	}
 
-body {
-	font-size: 13.5px;
-	line-height: 1.45;
-	color: var(--text);
-	background: var(--bg);
-	-webkit-font-smoothing: antialiased;
-	-moz-osx-font-smoothing: grayscale;
-}
+	body {
+		font-size: 13.5px;
+		line-height: 1.45;
+		color: var(--text);
+		background: var(--bg);
+		-webkit-font-smoothing: antialiased;
+		-moz-osx-font-smoothing: grayscale;
+	}
 
-/* Global focus ring — every interactive element inherits it. */
-:focus-visible {
-	outline: 2px solid var(--accent);
-	outline-offset: 1px;
-	border-radius: 4px;
+	/* Global focus ring — every interactive element inherits it. */
+	:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 1px;
+		border-radius: 4px;
+	}
 }
 
 /* ─── Scrollbars ─────────────────────────────────────────────── */

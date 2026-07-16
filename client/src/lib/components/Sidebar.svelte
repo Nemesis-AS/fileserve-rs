@@ -25,9 +25,7 @@
 	const pct = $derived(Math.min(100, (quota.used / quota.total) * 100));
 </script>
 
-<aside
-	class="flex min-h-0 w-[232px] flex-col overflow-hidden border-r border-edge bg-elevated"
->
+<aside class="flex min-h-0 w-[232px] flex-col overflow-hidden border-r border-edge bg-elevated">
 	<div
 		class="flex shrink-0 items-center gap-[9px] px-4 pt-[14px] pb-3 text-[14px] font-semibold tracking-[-0.01em]"
 	>

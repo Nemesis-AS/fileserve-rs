@@ -7,3 +7,6 @@ bun.lockb
 
 # Miscellaneous
 /static/
+
+# Visual-regression scratch (screenshots + harness scripts, not shipped)
+/tmp/

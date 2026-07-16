@@ -22,8 +22,13 @@
 		class: klass,
 		actions,
 		children
-	}: { title: string; sub?: string; class?: string; actions?: Snippet; children?: Snippet } =
-		$props();
+	}: {
+		title: string;
+		sub?: string;
+		class?: string;
+		actions?: Snippet;
+		children?: Snippet;
+	} = $props();
 
 	const s = head();
 </script>

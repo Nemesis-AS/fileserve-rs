@@ -100,7 +100,14 @@
 
 		{#if menuOpen}
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<!--
+			  `contents` is load-bearing: the thumb is `grid place-items-center`, so a normal
+			  wrapper would become an in-flow grid item, add a second row, and shove the
+			  centred ext badge upward. display:contents keeps this node out of the box tree
+			  while still hosting the action and the click handler.
+			-->
 			<div
+				class="contents"
 				use:clickOutside={{ onOutside: () => (menuOpen = false) }}
 				onclick={(e) => e.stopPropagation()}
 			>
