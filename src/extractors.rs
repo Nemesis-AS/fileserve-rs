@@ -10,6 +10,23 @@ pub struct JwtClaims {
     pub username: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ShareClaims {
+    pub shared_by: String,
+    pub file_id: String,
+    pub exp: usize,
+}
+
+pub fn verify_share_token(token: &str, secret: &str, expected_file_id: &str) -> bool {
+    decode::<ShareClaims>(
+        token,
+        &DecodingKey::from_secret(secret.as_bytes()),
+        &Validation::default(),
+    )
+    .map(|data| data.claims.file_id == expected_file_id)
+    .unwrap_or(false)
+}
+
 pub struct AuthUser {
     pub username: String,
 }

@@ -5,6 +5,14 @@ Rust + SvelteKit fullstack file server
 Backend: Rust (actix-web, sqlx + SQLite)
 Frontend: SvelteKit (client/)
 
+### To Do
+
+- [ ] User creation routes
+- [ ] Trash
+- [ ] Storage Quota
+- [ ] Password Change
+- [ ] Audit Log
+
 ### Prerequisites
 
 - Rust toolchain (stable)

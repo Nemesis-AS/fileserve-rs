@@ -3,20 +3,27 @@ use std::{
     io::{Seek, SeekFrom, Write},
 };
 
+use actix_files::NamedFile;
 use actix_web::{
     HttpRequest, HttpResponse, Responder, guard,
-    http::header::{ContentLength, ContentType},
+    http::header::{
+        ContentDisposition, ContentLength, ContentType, DispositionParam, DispositionType,
+    },
     middleware::from_fn,
     web::{self, ServiceConfig},
 };
 use blake2::Digest;
+use chrono::{Duration, Utc};
+use jsonwebtoken::{EncodingKey, Header as JwtHeader, encode};
 use sqlx::{Pool, Row, Sqlite};
 use uuid::Uuid;
 
 use crate::{
     config::AppConfig,
+    extractors::{AuthUser, ShareClaims, verify_share_token},
     middlewares::tus_resumable,
-    routes::api::types::ApiResponse,
+    models::FileRecord,
+    routes::api::types::{ApiResponse, DownloadQuery, ShareRequestBody, ShareResponse},
     utils::tus::{
         ChecksumCache, UploadMetadataFields, checksum_hex, decode_metadata, ensure_upload_file,
         final_file_path, hasher_from_prefix, upload_file_path,
@@ -33,7 +40,12 @@ async fn get_server_config() -> impl Responder {
         .finish()
 }
 
-async fn create_upload(req: HttpRequest, pool: web::Data<Pool<Sqlite>>, config: web::Data<AppConfig>) -> impl Responder {
+async fn create_upload(
+    req: HttpRequest,
+    user: AuthUser,
+    pool: web::Data<Pool<Sqlite>>,
+    config: web::Data<AppConfig>,
+) -> impl Responder {
     let upload_length_header = req
         .headers()
         .get("Upload-Length")
@@ -107,7 +119,7 @@ async fn create_upload(req: HttpRequest, pool: web::Data<Pool<Sqlite>>, config: 
     .bind(&metadata.file_name)
     .bind(&metadata.checksum)
     .bind(&metadata.mime_type)
-    .bind("user")
+    .bind(&user.username)
     .bind(expires_at)
     .fetch_one(pool.get_ref())
     .await;
@@ -289,8 +301,9 @@ async fn upload_chunk(
             }
 
             if declared_size < upload_offset {
-                return HttpResponse::BadRequest()
-                    .json(ApiResponse::error("Upload-Length is smaller than the current offset"));
+                return HttpResponse::BadRequest().json(ApiResponse::error(
+                    "Upload-Length is smaller than the current offset",
+                ));
             }
 
             let update_size_res = sqlx::query("UPDATE uploads SET file_size = ? WHERE id = ?")
@@ -300,7 +313,8 @@ async fn upload_chunk(
                 .await;
 
             if let Err(e) = update_size_res {
-                return HttpResponse::InternalServerError().json(ApiResponse::error(&e.to_string()));
+                return HttpResponse::InternalServerError()
+                    .json(ApiResponse::error(&e.to_string()));
             }
 
             file_size = Some(declared_size);
@@ -341,8 +355,7 @@ async fn upload_chunk(
         Some(hasher) => hasher,
         None => {
             let prefix_path = upload_path.clone();
-            match web::block(move || hasher_from_prefix(&prefix_path, upload_offset as u64)).await
-            {
+            match web::block(move || hasher_from_prefix(&prefix_path, upload_offset as u64)).await {
                 Ok(Ok(hasher)) => hasher,
                 _ => {
                     return HttpResponse::InternalServerError()
@@ -367,7 +380,10 @@ async fn upload_chunk(
             .json(ApiResponse::error("Failed to write chunk to disk"));
     }
 
-    checksum_cache.lock().unwrap().insert(file_id.clone(), hasher);
+    checksum_cache
+        .lock()
+        .unwrap()
+        .insert(file_id.clone(), hasher);
 
     let update_res = sqlx::query(
         "UPDATE uploads SET offset = offset + ?, computed_checksum = ? WHERE id = ? RETURNING offset",
@@ -422,7 +438,52 @@ async fn upload_chunk(
             .await;
 
             if let Err(e) = finalize_res {
-                return HttpResponse::InternalServerError().json(ApiResponse::error(&e.to_string()));
+                return HttpResponse::InternalServerError()
+                    .json(ApiResponse::error(&e.to_string()));
+            }
+
+            let file_dir: String = upload
+                .try_get("file_dir")
+                .unwrap_or_else(|_| String::from("/"));
+            let file_name: String = match upload.try_get("file_name") {
+                Ok(v) => v,
+                Err(e) => {
+                    return HttpResponse::InternalServerError()
+                        .json(ApiResponse::error(&e.to_string()));
+                }
+            };
+            let mime_type: String = match upload.try_get("mime_type") {
+                Ok(v) => v,
+                Err(e) => {
+                    return HttpResponse::InternalServerError()
+                        .json(ApiResponse::error(&e.to_string()));
+                }
+            };
+            let owner_uname: String = match upload.try_get("owner_uname") {
+                Ok(v) => v,
+                Err(e) => {
+                    return HttpResponse::InternalServerError()
+                        .json(ApiResponse::error(&e.to_string()));
+                }
+            };
+
+            let insert_file_res = sqlx::query(
+                "INSERT INTO files(id, file_name, file_dir, mime_type, file_size, checksum, owner_uname) \
+                 VALUES(?, ?, ?, ?, ?, ?, ?)",
+            )
+            .bind(Uuid::new_v4().simple().to_string())
+            .bind(&file_name)
+            .bind(&file_dir)
+            .bind(&mime_type)
+            .bind(size)
+            .bind(&computed_checksum)
+            .bind(&owner_uname)
+            .execute(pool.get_ref())
+            .await;
+
+            if let Err(e) = insert_file_res {
+                return HttpResponse::InternalServerError()
+                    .json(ApiResponse::error(&e.to_string()));
             }
         }
     }
@@ -430,6 +491,141 @@ async fn upload_chunk(
     HttpResponse::NoContent()
         .append_header(("Upload-Offset", new_offset))
         .finish()
+}
+
+async fn download_file(
+    req: HttpRequest,
+    file_id: web::Path<String>,
+    query: web::Query<DownloadQuery>,
+    user: Option<AuthUser>,
+    pool: web::Data<Pool<Sqlite>>,
+    config: web::Data<AppConfig>,
+) -> impl Responder {
+    let file_id = file_id.into_inner();
+
+    let file = match sqlx::query_as::<_, FileRecord>(
+        "SELECT id, file_name, mime_type, file_size, checksum, owner_uname FROM files WHERE id = ? AND deleted_at IS NULL",
+    )
+    .bind(&file_id)
+    .fetch_optional(pool.get_ref())
+    .await
+    {
+        Ok(Some(file)) => file,
+        Ok(None) => return HttpResponse::NotFound().json(ApiResponse::error("File not found")),
+        Err(e) => return HttpResponse::InternalServerError().json(ApiResponse::error(&e.to_string())),
+    };
+
+    let owned_by_user = user
+        .as_ref()
+        .is_some_and(|user| user.username == file.owner_uname);
+
+    let authorized_by_link = query
+        .token
+        .as_deref()
+        .is_some_and(|token| verify_share_token(token, &config.jwt_secret, &file.id));
+
+    if !owned_by_user && !authorized_by_link {
+        return HttpResponse::NotFound().json(ApiResponse::error("File not found"));
+    }
+
+    let path = final_file_path(&config, &file.checksum);
+
+    let named_file = match NamedFile::open(&path) {
+        Ok(named_file) => named_file,
+        Err(_) => return HttpResponse::NotFound().json(ApiResponse::error("File not found")),
+    };
+
+    let content_type: mime::Mime = file
+        .mime_type
+        .parse()
+        .unwrap_or(mime::APPLICATION_OCTET_STREAM);
+
+    let named_file = named_file
+        .set_content_type(content_type)
+        .set_content_disposition(ContentDisposition {
+            disposition: DispositionType::Attachment,
+            parameters: vec![DispositionParam::Filename(file.file_name.clone())],
+        });
+
+    named_file.into_response(&req)
+}
+
+async fn create_share_link(
+    file_id: web::Path<String>,
+    body: web::Json<ShareRequestBody>,
+    user: AuthUser,
+    pool: web::Data<Pool<Sqlite>>,
+    config: web::Data<AppConfig>,
+) -> impl Responder {
+    let file_id = file_id.into_inner();
+
+    let owns_file: Option<String> = match sqlx::query_scalar(
+        "SELECT id FROM files WHERE id = ? AND owner_uname = ? AND deleted_at IS NULL",
+    )
+    .bind(&file_id)
+    .bind(&user.username)
+    .fetch_optional(pool.get_ref())
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            return HttpResponse::InternalServerError().json(ApiResponse::error(&e.to_string()));
+        }
+    };
+
+    if owns_file.is_none() {
+        return HttpResponse::NotFound().json(ApiResponse::error("File not found"));
+    }
+
+    let minutes = body.expires_in_minutes.unwrap_or(60).clamp(1, 60 * 24 * 7);
+    let expires_at = Utc::now() + Duration::minutes(minutes);
+
+    let claims = ShareClaims {
+        shared_by: user.username,
+        file_id,
+        exp: expires_at.timestamp() as usize,
+    };
+
+    let token = match encode(
+        &JwtHeader::default(),
+        &claims,
+        &EncodingKey::from_secret(config.jwt_secret.as_bytes()),
+    ) {
+        Ok(token) => token,
+        Err(_) => {
+            return HttpResponse::InternalServerError()
+                .json(ApiResponse::error("Failed to create share link"));
+        }
+    };
+
+    HttpResponse::Ok().json(ApiResponse::ok(
+        "Share link created",
+        ShareResponse { token, expires_at },
+    ))
+}
+
+async fn list_user_files(user: Option<AuthUser>, pool: web::Data<Pool<Sqlite>>) -> impl Responder {
+    if user.is_none() {
+        return HttpResponse::Forbidden().json(ApiResponse::error("User not logged in"));
+    }
+
+    let user = user.unwrap();
+
+    let files_res = sqlx::query_as::<_, FileRecord>(
+        "SELECT id, file_name, mime_type, file_size, checksum, owner_uname FROM files WHERE owner_uname = ? AND deleted_at IS NULL LIMIT 50",
+    )
+    .bind(user.username)
+    .fetch_all(pool.as_ref())
+    .await;
+
+    if let Err(e) = files_res {
+        return HttpResponse::InternalServerError().json(ApiResponse::error(&e.to_string()));
+    }
+
+    HttpResponse::Ok().json(ApiResponse::ok(
+        "files fetched successfully",
+        files_res.unwrap(),
+    ))
 }
 
 pub fn register(config: &mut ServiceConfig, app_config: &AppConfig) {
@@ -445,4 +641,9 @@ pub fn register(config: &mut ServiceConfig, app_config: &AppConfig) {
             .route("/{upload_id}", web::head().to(get_upload_offset))
             .route("/{upload_id}", web::patch().to(upload_chunk)),
     );
+
+    config
+        .route("/{id}/download", web::get().to(download_file))
+        .route("/{id}/share", web::post().to(create_share_link))
+        .route("/my", web::get().to(list_user_files));
 }
