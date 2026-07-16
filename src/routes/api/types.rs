@@ -59,3 +59,8 @@ pub struct ShareResponse {
     pub token: String,
     pub expires_at: DateTime<Utc>,
 }
+
+#[derive(Deserialize)]
+pub struct FileSearchQuery {
+    pub filename: String,
+}

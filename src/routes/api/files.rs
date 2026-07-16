@@ -23,7 +23,9 @@ use crate::{
     extractors::{AuthUser, ShareClaims, verify_share_token},
     middlewares::tus_resumable,
     models::FileRecord,
-    routes::api::types::{ApiResponse, DownloadQuery, ShareRequestBody, ShareResponse},
+    routes::api::types::{
+        ApiResponse, DownloadQuery, FileSearchQuery, ShareRequestBody, ShareResponse,
+    },
     utils::tus::{
         ChecksumCache, UploadMetadataFields, checksum_hex, decode_metadata, ensure_upload_file,
         final_file_path, hasher_from_prefix, upload_file_path,
@@ -628,6 +630,39 @@ async fn list_user_files(user: Option<AuthUser>, pool: web::Data<Pool<Sqlite>>) 
     ))
 }
 
+async fn search_user_files(
+    user: Option<AuthUser>,
+    pool: web::Data<Pool<Sqlite>>,
+    query: web::Query<FileSearchQuery>,
+) -> impl Responder {
+    if user.is_none() {
+        return HttpResponse::Forbidden().json(ApiResponse::error("User not logged in"));
+    }
+
+    let user = user.unwrap();
+
+    let query = query.into_inner();
+    let pattern = format!("%{}%", query.filename);
+
+    let files_res = sqlx::query_as::<_, FileRecord>(
+        "SELECT id, file_name, mime_type, file_size, checksum, owner_uname FROM files WHERE owner_uname = ? AND deleted_at IS NULL AND (file_name LIKE '%?%' OR file_path LIKE '%?%') LIMIT 50",
+    )
+    .bind(user.username)
+    .bind(&pattern)
+    .bind(&pattern)
+    .fetch_all(pool.as_ref())
+    .await;
+
+    if let Err(e) = files_res {
+        return HttpResponse::InternalServerError().json(ApiResponse::error(&e.to_string()));
+    }
+
+    HttpResponse::Ok().json(ApiResponse::ok(
+        "files fetched successfully",
+        files_res.unwrap(),
+    ))
+}
+
 pub fn register(config: &mut ServiceConfig, app_config: &AppConfig) {
     config.service(
         web::scope("/upload")
@@ -645,5 +680,6 @@ pub fn register(config: &mut ServiceConfig, app_config: &AppConfig) {
     config
         .route("/{id}/download", web::get().to(download_file))
         .route("/{id}/share", web::post().to(create_share_link))
-        .route("/my", web::get().to(list_user_files));
+        .route("/my", web::get().to(list_user_files))
+        .route("/search", web::get().to(search_user_files));
 }
