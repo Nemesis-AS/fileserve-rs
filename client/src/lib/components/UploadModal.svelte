@@ -98,7 +98,7 @@
 <Modal title="Upload files" size="wide" {onClose}>
 	<Dropzone
 		active={drag}
-		hint="Single files up to 5 GB · multiple selections OK"
+		hint="Select one or more files"
 		ondragover={(e: DragEvent) => {
 			e.preventDefault();
 			drag = true;
@@ -107,7 +107,7 @@
 		ondrop={onDrop}
 		onclick={() => inputEl?.click()}
 	>
-		<Icon name="Upload" size={28} />
+		<Icon name="Upload" class="mx-auto" size={28} />
 		<div class="text-[13px] font-medium text-ink">
 			Drop files here or <span class="text-accent-ink">browse</span>
 		</div>

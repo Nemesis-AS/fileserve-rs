@@ -75,6 +75,15 @@
 
 	const isAdmin = $derived(authStore.user?.role === 'admin');
 
+	const pageTitle = $derived.by(() => {
+		if (screen === 'admin' || screen === 'admin-edit') return 'Users';
+		if (screen === 'audit') return 'Audit log';
+		if (screen === 'settings') return 'Settings';
+		if (section === 'public') return 'Public';
+		if (section === 'trash') return 'Trash';
+		return 'My Files';
+	});
+
 	function handleSection(s: FileSection) {
 		goto(`/files/${s}`);
 	}
@@ -84,6 +93,10 @@
 		else if (n === 'audit') goto('/admin/audit');
 	}
 </script>
+
+<svelte:head>
+	<title>{pageTitle} · fileserve.rs</title>
+</svelte:head>
 
 {#if authStore.user}
 	<div

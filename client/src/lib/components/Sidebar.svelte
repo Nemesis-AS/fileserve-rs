@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Icon from './Icon.svelte';
+	import Logo from './Logo.svelte';
 	import type { FileSection } from '$lib/types';
 	import { NavItem } from './ui/nav-item/index.js';
 	import { Meter } from './ui/meter/index.js';
@@ -29,13 +30,12 @@
 </script>
 
 <aside class="flex min-h-0 w-[232px] flex-col overflow-hidden border-r border-edge bg-elevated">
-	<div
-		class="flex shrink-0 items-center gap-[9px] px-4 pt-[14px] pb-3 text-[14px] font-semibold tracking-[-0.01em]"
-	>
-		<div class="grid size-[22px] shrink-0 place-items-center rounded-md bg-ink text-surface">
-			<Icon name="Files" size={13} />
-		</div>
-		fileserve.rs
+	<div class="flex shrink-0 items-center gap-[9px] px-4 pt-[14px] pb-3">
+		<Logo size={22} />
+		<span class="text-[15px] font-bold tracking-[-0.035em] text-ink">
+			fileserve<span class="mx-[1.5px] inline-block size-[4px] rounded-full bg-accent align-baseline"
+			></span><span class="font-mono text-[13px] font-semibold text-accent-ink">rs</span>
+		</span>
 	</div>
 
 	<nav class="scroll-area flex flex-1 flex-col gap-px overflow-y-auto px-2 py-1">

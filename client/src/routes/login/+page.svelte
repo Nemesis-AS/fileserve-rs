@@ -4,6 +4,7 @@
 	import { authStore } from '$lib/stores/auth.svelte';
 	import { login } from '$lib/services/auth';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
+	import Logo from '$lib/components/Logo.svelte';
 
 	let username = $state('alex');
 	let password = $state('');
@@ -27,6 +28,10 @@
 	}
 </script>
 
+<svelte:head>
+	<title>Sign in · fileserve.rs</title>
+</svelte:head>
+
 <div class="flex h-full items-center justify-center">
 	<ThemeToggle />
 
@@ -34,6 +39,15 @@
 		onsubmit={handleSubmit}
 		class="w-full max-w-90 rounded-xl border border-edge bg-surface p-6 shadow-md"
 	>
+		<div class="mb-6 flex flex-col items-center gap-3 text-center">
+			<Logo size={40} />
+			<span class="text-[19px] font-bold tracking-[-0.035em] text-ink">
+				fileserve<span
+					class="mx-[2px] inline-block size-[5px] rounded-full bg-accent align-baseline"
+				></span><span class="font-mono text-[16px] font-semibold text-accent-ink">rs</span>
+			</span>
+		</div>
+
 		<h1 class="text-lg font-semibold">Sign in</h1>
 		<p class="mb-6 text-sm text-ink-muted">Welcome back. Use your account on this server.</p>
 
