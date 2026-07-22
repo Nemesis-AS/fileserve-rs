@@ -16,14 +16,6 @@ impl<T: Serialize> ApiResponse<T> {
             data: Some(data),
         }
     }
-
-    // pub fn error_data(message: &str, data: T) -> Self {
-    //     Self {
-    //         success: false,
-    //         message: Some(message.into()),
-    //         data: Some(data),
-    //     }
-    // }
 }
 
 impl ApiResponse<()> {
@@ -69,4 +61,9 @@ pub struct FileSearchQuery {
 #[derive(Deserialize)]
 pub struct RenameRequestBody {
     pub name: String,
+}
+
+#[derive(Deserialize)]
+pub struct VisibilityRequestBody {
+    pub public: bool,
 }

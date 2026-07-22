@@ -15,17 +15,46 @@
 
 	let name = $state('');
 	let username = $state('');
-	let email = $state('');
 	let role = $state<'user' | 'admin'>('user');
 	let status = $state<'active' | 'suspended'>('active');
-	let quotaGB = $state(50);
+	let quotaGB = $state(20);
 	let password = $state('');
+
+	// Set once the server mints a password for us. While present we stay on the
+	// page showing it, since it's the only time it can ever be read back.
+	let tempPassword = $state<string | null>(null);
+	let createdUsername = $state('');
+	let copied = $state(false);
 
 	async function handleSubmit(e: SubmitEvent) {
 		e.preventDefault();
-		await createUser({ name, username, email, role, status, quotaGB });
-		toastStore.show(`Created user @${username}`);
-		goto('/admin/users');
+		try {
+			const created = await createUser({
+				name,
+				username,
+				role,
+				status,
+				quotaGB,
+				password: password || undefined
+			});
+			if (created.tempPassword) {
+				// Hold on the page so the admin can copy the one-time password.
+				tempPassword = created.tempPassword;
+				createdUsername = username;
+			} else {
+				toastStore.show(`Created user @${username}`);
+				goto('/admin/users');
+			}
+		} catch (err) {
+			toastStore.show(err instanceof Error ? err.message : 'Failed to create user');
+		}
+	}
+
+	function copyPassword() {
+		if (!tempPassword) return;
+		navigator.clipboard?.writeText(tempPassword).catch(() => {});
+		copied = true;
+		setTimeout(() => (copied = false), 1500);
 	}
 </script>
 
@@ -49,12 +78,35 @@
 	<div class="mb-[22px] flex items-center gap-[14px]">
 		<Avatar name={name || '? ?'} size="lg" />
 		<div>
-			<h1 class="m-0 text-[20px] font-semibold tracking-[-0.01em]">New user</h1>
-			<p class="m-0 text-[13px] text-ink-muted">Create an account on this server</p>
+			<h1 class="m-0 text-[20px] font-semibold tracking-[-0.01em]">
+				{tempPassword ? `Created @${createdUsername}` : 'New user'}
+			</h1>
+			<p class="m-0 text-[13px] text-ink-muted">
+				{tempPassword
+					? 'Share the temporary password below — it can’t be shown again.'
+					: 'Create an account on this server'}
+			</p>
 		</div>
 	</div>
 
-	<form onsubmit={handleSubmit} class="grid gap-[18px]">
+	{#if tempPassword}
+		<Section label="Temporary password">
+			<p class="m-0 mb-3 text-[13px] text-ink-muted">
+				This is the only time this password is shown. Copy it and share it with the user.
+			</p>
+			<div class="flex items-center gap-2">
+				<code
+					class="flex-1 select-all rounded-lg border border-edge bg-sunken px-3 py-2 font-mono text-[14px] tracking-wide text-ink"
+					>{tempPassword}</code
+				>
+				<Button variant="ghost" onclick={copyPassword}>{copied ? 'Copied' : 'Copy'}</Button>
+			</div>
+			<div class="flex gap-2 pt-4">
+				<Button onclick={() => goto('/admin/users')}>Done</Button>
+			</div>
+		</Section>
+	{:else}
+		<form onsubmit={handleSubmit} class="grid gap-[18px]">
 		<Section label="Profile">
 			<div class="flex gap-3">
 				<Field label="Full name" class="mb-0 flex-1">
@@ -64,9 +116,6 @@
 					<Input bind:value={username} required />
 				</Field>
 			</div>
-			<Field label="Email" hint="Used for password resets only." class="mb-0">
-				<Input type="email" bind:value={email} />
-			</Field>
 		</Section>
 
 		<Section label="Access">
@@ -95,7 +144,7 @@
 		<Section label="Initial password">
 			<Field
 				label="Password"
-				hint="Leave blank to auto-generate. The user will be prompted to change it on first login."
+				hint="Leave blank to auto-generate."
 				class="mb-0"
 			>
 				<Input type="text" placeholder="Auto-generate" bind:value={password} />
@@ -107,4 +156,5 @@
 			<Button variant="ghost" onclick={() => goto('/admin/users')}>Cancel</Button>
 		</div>
 	</form>
+	{/if}
 </Page>

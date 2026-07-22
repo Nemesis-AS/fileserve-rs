@@ -7,45 +7,55 @@
 	import Toast from '$lib/components/Toast.svelte';
 	import { authStore } from '$lib/stores/auth.svelte';
 	import { prefs } from '$lib/stores/prefs.svelte';
-	import { getFiles } from '$lib/services/files';
-	import { getUsers } from '$lib/services/users';
+	import { quotaStore } from '$lib/stores/quota.svelte';
+	import { getFiles, getPublicFiles } from '$lib/services/files';
+	import { getUsers, getMe } from '$lib/services/users';
 	import type { FileSection, FilerFile, User } from '$lib/types';
 
 	let { children } = $props();
 
-	// Auth guard
+	let hydrated = $state(false);
+
 	$effect(() => {
-		if (browser && !authStore.isLoggedIn) {
+		if (browser && hydrated && !authStore.isLoggedIn) {
 			goto('/login', { replaceState: true });
 		}
 	});
 
-	// Live counts for sidebar
 	let allFiles = $state<FilerFile[]>([]);
+	let publicFiles = $state<FilerFile[]>([]);
 	let allUsers = $state<User[]>([]);
 
 	onMount(async () => {
-		// These only feed sidebar counts, so a failure degrades to "no badge"
-		// rather than taking down the shell around a page that may still work.
-		[allFiles, allUsers] = await Promise.all([
+		try {
+			authStore.login(await getMe());
+		} catch {
+			// Keep whatever the store already had (if anything).
+		} finally {
+			hydrated = true;
+		}
+
+		[allFiles, publicFiles, allUsers] = await Promise.all([
 			getFiles().catch(() => []),
+			getPublicFiles().catch(() => []),
 			getUsers().catch(() => [])
 		]);
 	});
 
 	const counts = $derived({
 		my: allFiles.filter((f) => !f.trashed).length,
-		public: allFiles.filter((f) => !f.trashed && f.public).length,
+		public: publicFiles.length,
 		trash: allFiles.filter((f) => f.trashed).length,
 		users: allUsers.length
 	});
 
-	const usedGB = $derived(
-		allFiles.filter((f) => !f.trashed).reduce((s, f) => s + f.size, 0) / 1_073_741_824
-	);
-	const quota = $derived({ used: usedGB, total: 500 });
+	$effect(() => {
+		void $page.url.pathname;
+		void quotaStore.refresh();
+	});
 
-	// Derive current screen + section from route
+	const quota = $derived({ used: quotaStore.quota.usedGB, total: quotaStore.quota.quotaGB });
+
 	const currentPath = $derived($page.url.pathname);
 
 	const screen = $derived.by(() => {
@@ -76,7 +86,6 @@
 </script>
 
 {#if authStore.user}
-	<!-- .app — sidebar column collapses away when hidden -->
 	<div
 		class="grid h-full overflow-hidden bg-surface {prefs.showSidebar
 			? 'grid-cols-[auto_1fr]'

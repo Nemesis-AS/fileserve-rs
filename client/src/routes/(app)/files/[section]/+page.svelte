@@ -11,8 +11,11 @@
 	import { authStore } from '$lib/stores/auth.svelte';
 	import { prefs } from '$lib/stores/prefs.svelte';
 	import { toastStore } from '$lib/stores/toast.svelte';
+	import { quotaStore } from '$lib/stores/quota.svelte';
 	import {
 		getFiles,
+		getPublicFiles,
+		searchFiles,
 		trashFile,
 		restoreFile,
 		deleteFile,
@@ -24,10 +27,14 @@
 	import type { FilerFile, FileSection } from '$lib/types';
 
 	const sectionParam = $derived($page.params.section as FileSection);
+	// A `?q=` param turns the section into a server-backed search results view.
+	const query = $derived($page.url.searchParams.get('q'));
 
 	let allFiles = $state<FilerFile[]>([]);
+	// The Public section is a cross-owner listing, not a filter over `allFiles`.
+	let publicFiles = $state<FilerFile[]>([]);
+	let searchResults = $state<FilerFile[]>([]);
 	let activeId = $state<string | null>(null);
-	let search = $state('');
 	let showUpload = $state(false);
 	let propsFile = $state<FilerFile | null>(null);
 	let renameTarget = $state<FilerFile | null>(null);
@@ -37,6 +44,9 @@
 	async function refresh() {
 		try {
 			allFiles = await getFiles();
+			// Usage changed (e.g. an upload just completed) — keep the sidebar bar
+			// in step rather than waiting for the next navigation.
+			void quotaStore.refresh();
 		} catch (e) {
 			toastStore.show(e instanceof Error ? e.message : 'Could not load files');
 		}
@@ -44,11 +54,44 @@
 
 	onMount(refresh);
 
-	const sectionFiles = $derived.by(() => {
-		const list = filterBySection(allFiles, sectionParam);
-		if (!search) return list;
-		const q = search.toLowerCase();
-		return list.filter((f) => f.name.toLowerCase().includes(q));
+	// The Public section is a separate cross-owner fetch; (re)load it on entry so
+	// a file another user just made public shows up without a full reload.
+	$effect(() => {
+		if (sectionParam !== 'public') return;
+		let active = true;
+		getPublicFiles()
+			.then((f) => active && (publicFiles = f))
+			.catch((e) => active && toastStore.show(e instanceof Error ? e.message : 'Could not load public files'));
+		return () => {
+			active = false;
+		};
+	});
+
+	// Fetch results whenever `?q=` changes; a flag drops stale in-flight lookups.
+	$effect(() => {
+		const q = query;
+		if (!q) {
+			searchResults = [];
+			return;
+		}
+		let active = true;
+		searchFiles(q)
+			.then((r) => active && (searchResults = r))
+			.catch((e) => {
+				if (!active) return;
+				searchResults = [];
+				toastStore.show(e instanceof Error ? e.message : 'Search failed');
+			});
+		return () => {
+			active = false;
+		};
+	});
+
+	const displayFiles = $derived.by(() => {
+		if (query) return searchResults.filter((f) => !f.trashed);
+		// Server already scopes this to non-trashed public rows across all owners.
+		if (sectionParam === 'public') return publicFiles;
+		return filterBySection(allFiles, sectionParam);
 	});
 
 	const TITLES: Record<FileSection, string> = {
@@ -60,12 +103,17 @@
 		goto(`/files/${sectionParam}/${f.id}`);
 	}
 
+	function handleSearchSubmit(q: string) {
+		goto(`/files/${sectionParam}?q=${encodeURIComponent(q)}`);
+	}
+
 	function handleDownload(f: FilerFile) {
 		downloadFile(f);
 	}
 
 	function replace(updated: FilerFile) {
 		allFiles = allFiles.map((x) => (x.id === updated.id ? updated : x));
+		searchResults = searchResults.map((x) => (x.id === updated.id ? updated : x));
 	}
 
 	/** Surfaces the server's reason in a toast instead of failing silently. */
@@ -79,6 +127,7 @@
 			if (sectionParam === 'trash') {
 				await deleteFile(f.id);
 				allFiles = allFiles.filter((x) => x.id !== f.id);
+				searchResults = searchResults.filter((x) => x.id !== f.id);
 				toastStore.show(`Deleted "${f.name}" permanently`);
 			} else {
 				replace(await trashFile(f.id));
@@ -86,13 +135,26 @@
 				toastStore.show(`Moved "${f.name}" to Trash`, async () => {
 					try {
 						replace(await restoreFile(f.id));
+						void quotaStore.refresh();
 					} catch (e) {
 						fail(e, 'Could not restore file');
 					}
 				});
 			}
+			// Trashing and permanent deletion both change counted usage.
+			void quotaStore.refresh();
 		} catch (e) {
 			fail(e, 'Could not delete file');
+		}
+	}
+
+	async function handleRestore(f: FilerFile) {
+		try {
+			replace(await restoreFile(f.id));
+			void quotaStore.refresh(); // restoring re-counts the file against usage
+			toastStore.show(`Restored "${f.name}"`);
+		} catch (e) {
+			fail(e, 'Could not restore file');
 		}
 	}
 
@@ -106,9 +168,19 @@
 	}
 
 	async function handleToggleShare(f: FilerFile, makePublic: boolean) {
-		const updated = await toggleShare(f, makePublic);
-		replace(updated);
-		if (propsFile?.id === f.id) propsFile = updated;
+		try {
+			const updated = await toggleShare(f, makePublic);
+			replace(updated);
+			// Keep the Public listing in step: add on share, drop on unshare.
+			publicFiles = updated.public
+				? publicFiles.some((x) => x.id === updated.id)
+					? publicFiles.map((x) => (x.id === updated.id ? updated : x))
+					: [updated, ...publicFiles]
+				: publicFiles.filter((x) => x.id !== updated.id);
+			if (propsFile?.id === f.id) propsFile = updated;
+		} catch (e) {
+			fail(e, 'Could not update sharing');
+		}
 	}
 
 	// ── Keyboard shortcuts ───────────────────────────────────
@@ -124,10 +196,11 @@
 		}
 		if (inText) return;
 
-		if (e.key === 'Escape' && search) { search = ''; return; }
+		// Escape leaves the search results view back to the plain section.
+		if (e.key === 'Escape' && query) { goto(`/files/${sectionParam}`); return; }
 
 		if (e.key === 'j' || e.key === 'ArrowDown' || e.key === 'k' || e.key === 'ArrowUp') {
-			const ids = sectionFiles.map((f) => f.id);
+			const ids = displayFiles.map((f) => f.id);
 			if (!ids.length) return;
 			const idx = ids.indexOf(activeId ?? '');
 			const next = (e.key === 'j' || e.key === 'ArrowDown')
@@ -136,23 +209,23 @@
 			activeId = ids[next];
 			e.preventDefault();
 		}
-		if ((e.key === 'Enter' || e.key === 'o') && activeId) {
-			const f = sectionFiles.find((x) => x.id === activeId);
+		if ((e.key === 'Enter' || e.key === 'o') && activeId && sectionParam !== 'trash') {
+			const f = displayFiles.find((x) => x.id === activeId);
 			if (f) handleView(f);
 			e.preventDefault();
 		}
 		if ((e.key === 'Delete' || e.key === 'Backspace') && activeId && sectionParam !== 'trash') {
-			const f = sectionFiles.find((x) => x.id === activeId);
+			const f = displayFiles.find((x) => x.id === activeId);
 			if (f) deleteTarget = f;
 			e.preventDefault();
 		}
 		if (e.key === 'r' && activeId) {
-			const f = sectionFiles.find((x) => x.id === activeId);
+			const f = displayFiles.find((x) => x.id === activeId);
 			if (f) renameTarget = f;
 			e.preventDefault();
 		}
 		if ((e.key === 'i' || e.key === ' ') && activeId) {
-			const f = sectionFiles.find((x) => x.id === activeId);
+			const f = displayFiles.find((x) => x.id === activeId);
 			if (f) propsFile = f;
 			e.preventDefault();
 		}
@@ -166,9 +239,10 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <TopBar
-	crumbs={['filer', TITLES[sectionParam] ?? 'Files']}
-	{search}
-	onSearch={(v) => { search = v; }}
+	crumbs={['fileserve.rs', query ? `Search: “${query}”` : TITLES[sectionParam] ?? 'Files']}
+	searchValue={query ?? ''}
+	onPick={handleView}
+	onSubmit={handleSearchSubmit}
 	onUpload={() => (showUpload = true)}
 	dark={prefs.dark}
 	onToggleDark={() => (prefs.dark = !prefs.dark)}
@@ -179,16 +253,17 @@
 />
 
 <FileBrowser
-	files={sectionFiles}
+	files={displayFiles}
 	view={prefs.view}
 	section={sectionParam}
-	{search}
+	search={query ?? ''}
 	{activeId}
 	onActiveId={(id) => (activeId = id)}
 	onViewChange={(v) => (prefs.view = v)}
 	onView={handleView}
 	onDownload={handleDownload}
 	onRename={(f) => (renameTarget = f)}
+	onRestore={handleRestore}
 	onDelete={(f) => (deleteTarget = f)}
 	onProperties={(f) => (propsFile = f)}
 	onUpload={() => (showUpload = true)}

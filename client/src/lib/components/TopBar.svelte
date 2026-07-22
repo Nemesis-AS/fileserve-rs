@@ -1,17 +1,18 @@
 <script lang="ts">
 	import Icon from './Icon.svelte';
-	import type { User } from '$lib/types';
+	import type { User, FilerFile } from '$lib/types';
 	import { clickOutside } from '$lib/actions/clickOutside';
 	import { Button } from './ui/button/index.js';
 	import { IconButton } from './ui/icon-button/index.js';
 	import { Avatar } from './ui/avatar/index.js';
-	import { SearchInput } from './ui/search-input/index.js';
+	import SearchBox from './SearchBox.svelte';
 	import { Menu, MenuItem, MenuSeparator, MenuHeader } from './ui/menu/index.js';
 
 	let {
 		crumbs,
-		search = '',
-		onSearch,
+		searchValue = '',
+		onPick,
+		onSubmit,
 		onUpload,
 		dark,
 		onToggleDark,
@@ -21,8 +22,9 @@
 		searchRef: searchEl = $bindable()
 	}: {
 		crumbs: string[];
-		search?: string;
-		onSearch?: (v: string) => void;
+		searchValue?: string;
+		onPick?: (file: FilerFile) => void;
+		onSubmit?: (query: string) => void;
 		onUpload?: () => void;
 		dark: boolean;
 		onToggleDark: () => void;
@@ -47,14 +49,13 @@
 		{/each}
 	</div>
 
-	{#if onSearch !== undefined}
-		<SearchInput
+	{#if onSubmit && onPick}
+		<SearchBox
 			bind:ref={searchEl}
 			class="ml-3 max-w-[360px] flex-1"
-			placeholder="Search files…"
-			value={search}
-			kbd="/"
-			oninput={(e) => onSearch?.((e.target as HTMLInputElement).value)}
+			initialValue={searchValue}
+			{onPick}
+			{onSubmit}
 		/>
 	{/if}
 
@@ -80,7 +81,7 @@
 
 			{#if menuOpen}
 				<Menu class="top-[calc(100%+6px)] right-0">
-					<MenuHeader title={user.name}>{user.email}</MenuHeader>
+					<MenuHeader title={user.name}>@{user.username}</MenuHeader>
 					<MenuSeparator />
 					<MenuItem
 						onclick={() => {

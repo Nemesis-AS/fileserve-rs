@@ -119,28 +119,27 @@
 </script>
 
 <svelte:head>
-	<title>Design System · filer</title>
+	<title>Design System · fileserve.rs</title>
 </svelte:head>
 
 <div class="min-h-full bg-surface font-system text-[13.5px] leading-[1.45] text-ink antialiased">
-	<!-- Top nav -->
 	<div class="sticky top-0 z-10 flex h-12 items-center gap-4 border-b border-edge bg-surface px-8">
 		<div class="flex items-center gap-[9px] text-[14px] font-semibold tracking-tight">
 			<div class="grid size-[22px] shrink-0 place-items-center rounded-md bg-ink text-surface">
 				<Icon name="Files" size={13} />
 			</div>
-			filer
+			fileserve.rs
 		</div>
 		<span class="text-edge-strong">·</span>
 		<span class="text-[13.5px] text-ink-muted">Design System</span>
 		<span
-			class="ml-2 rounded-full bg-accent-soft px-[7px] py-px text-[10px] font-semibold text-accent-ink"
+			class="ml-2 rounded-full bg-accent-soft px-1.75 py-px text-[10px] font-semibold text-accent-ink"
 		>
 			Live components
 		</span>
 
 		<div class="ml-auto flex items-center gap-4">
-			{#each SECTIONS as [id, label]}
+			{#each SECTIONS as [id, label] (id)}
 				<a href="#{id}" class="text-[13px] text-ink-muted hover:text-ink">{label}</a>
 			{/each}
 			<IconButton title="Toggle theme" onclick={() => (prefs.dark = !prefs.dark)}>
@@ -150,7 +149,6 @@
 	</div>
 
 	<div class="mx-auto max-w-[1100px] px-8 pb-24">
-		<!-- ── Colors ─────────────────────────────────────────── -->
 		<h2 id="colors" class={sectionHd()}>Colors</h2>
 		<p class="mb-6 max-w-[640px] text-[13px] text-ink-muted">
 			Every colour is a CSS custom property in
@@ -180,7 +178,6 @@
 			{/each}
 		</div>
 
-		<!-- ── Foundations ────────────────────────────────────── -->
 		<h2 id="foundations" class={sectionHd()}>Foundations</h2>
 
 		<div class="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -238,7 +235,6 @@
 			</Card>
 		</div>
 
-		<!-- ── Components ─────────────────────────────────────── -->
 		<h2 id="components" class={sectionHd()}>Components</h2>
 
 		<div class="grid grid-cols-1 gap-4 md:grid-cols-2">

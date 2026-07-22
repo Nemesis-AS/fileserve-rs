@@ -34,8 +34,18 @@ async fn main() -> std::io::Result<()> {
 
     println!("Started server at PORT {}!", port);
     HttpServer::new(move || {
-        // @todo! Use apt CORS policy
-        let cors = Cors::permissive();
+        // Restrict cross-origin access to the configured allowlist. Credentials
+        // are required (the frontend authenticates with cookies), which rules
+        // out a wildcard origin — each allowed origin is added explicitly. An
+        // empty allowlist (same-origin prod deploy) permits no cross-origin use.
+        let mut cors = Cors::default()
+            .allowed_methods(vec!["GET", "POST", "PATCH", "DELETE", "OPTIONS"])
+            .allow_any_header()
+            .supports_credentials()
+            .max_age(3600);
+        for origin in &config.allowed_origins {
+            cors = cors.allowed_origin(origin);
+        }
 
         App::new()
             .wrap(cors)

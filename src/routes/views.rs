@@ -4,7 +4,6 @@ use actix_web::{
     web::{Path, ServiceConfig},
 };
 
-// View Routes
 #[get("/")]
 pub async fn index() -> HttpResponse {
     handle_embedded_file("index.html")

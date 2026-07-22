@@ -25,7 +25,7 @@ use crate::{
     models::{FILE_COLUMNS, FileRecord},
     routes::api::types::{
         ApiResponse, DownloadQuery, FileSearchQuery, RenameRequestBody, ShareRequestBody,
-        ShareResponse,
+        ShareResponse, VisibilityRequestBody,
     },
     utils::tus::{
         ChecksumCache, UploadMetadataFields, checksum_hex, decode_metadata, ensure_upload_file,
@@ -33,7 +33,6 @@ use crate::{
     },
 };
 
-// TUS Spec
 async fn get_server_config() -> impl Responder {
     HttpResponse::NoContent()
         .append_header(("Tus-Resumable", "1.0.0"))
@@ -108,6 +107,41 @@ async fn create_upload(
     let Ok(metadata) = decode_metadata(meta).and_then(UploadMetadataFields::try_from) else {
         return HttpResponse::BadRequest().json(ApiResponse::error("Invalid metadata"));
     };
+
+    // Enforce the owner's storage quota when the size is declared up front.
+    // Usage is the sum of their non-trashed files (computed, never stored); a
+    // NULL quota means unlimited. Deferred-length uploads can't be pre-checked
+    // here and remain bounded only by Tus-Max-Size.
+    if let Some(length) = content_length {
+        let quota: Option<i64> = match sqlx::query_scalar::<_, Option<i64>>(
+            "SELECT quota_bytes FROM users WHERE username = ?",
+        )
+        .bind(&user.username)
+        .fetch_one(pool.get_ref())
+        .await
+        {
+            Ok(quota) => quota,
+            Err(e) => {
+                return HttpResponse::InternalServerError().json(ApiResponse::error(&e.to_string()));
+            }
+        };
+
+        if let Some(quota) = quota {
+            let used: i64 = sqlx::query_scalar(
+                "SELECT COALESCE(SUM(file_size), 0) FROM files \
+                 WHERE owner_uname = ? AND deleted_at IS NULL",
+            )
+            .bind(&user.username)
+            .fetch_one(pool.get_ref())
+            .await
+            .unwrap_or(0);
+
+            if used + length > quota {
+                return HttpResponse::PayloadTooLarge()
+                    .json(ApiResponse::error("Storage quota exceeded"));
+            }
+        }
+    }
 
     let uid = Uuid::new_v4().simple().to_string();
     let expires_at = chrono::Local::now() + chrono::Duration::minutes(60);
@@ -527,7 +561,11 @@ async fn download_file(
         .as_deref()
         .is_some_and(|token| verify_share_token(token, &config.jwt_secret, &file.id));
 
-    if !owned_by_user && !authorized_by_link {
+    // A public file is downloadable by any authenticated user; unauthenticated
+    // access still requires a valid share token.
+    let authorized_as_public = file.public && user.is_some();
+
+    if !owned_by_user && !authorized_by_link && !authorized_as_public {
         return HttpResponse::NotFound().json(ApiResponse::error("File not found"));
     }
 
@@ -631,6 +669,29 @@ async fn list_user_files(user: Option<AuthUser>, pool: web::Data<Pool<Sqlite>>) 
     ))
 }
 
+async fn list_public_files(user: Option<AuthUser>, pool: web::Data<Pool<Sqlite>>) -> impl Responder {
+    if user.is_none() {
+        return HttpResponse::Forbidden().json(ApiResponse::error("User not logged in"));
+    }
+
+    // Every public file, regardless of owner — the section is a shared listing.
+    let files_res = sqlx::query_as::<_, FileRecord>(&format!(
+        "SELECT {FILE_COLUMNS} FROM files WHERE public = 1 AND deleted_at IS NULL \
+         ORDER BY created_at DESC, file_name LIMIT 200",
+    ))
+    .fetch_all(pool.as_ref())
+    .await;
+
+    if let Err(e) = files_res {
+        return HttpResponse::InternalServerError().json(ApiResponse::error(&e.to_string()));
+    }
+
+    HttpResponse::Ok().json(ApiResponse::ok(
+        "files fetched successfully",
+        files_res.unwrap(),
+    ))
+}
+
 async fn search_user_files(
     user: Option<AuthUser>,
     pool: web::Data<Pool<Sqlite>>,
@@ -703,6 +764,36 @@ async fn rename_file(
     .await;
 
     respond_with_file(result, "File renamed")
+}
+
+async fn set_file_visibility(
+    file_id: web::Path<String>,
+    body: web::Json<VisibilityRequestBody>,
+    user: AuthUser,
+    pool: web::Data<Pool<Sqlite>>,
+) -> impl Responder {
+    let file_id = file_id.into_inner();
+
+    // Only the owner may change visibility; the ownership filter also doubles as
+    // the not-found guard for a stranger's (or nonexistent) id.
+    let result = sqlx::query_as::<_, FileRecord>(&format!(
+        "UPDATE files SET public = ? WHERE id = ? AND owner_uname = ? AND deleted_at IS NULL \
+         RETURNING {FILE_COLUMNS}",
+    ))
+    .bind(body.public)
+    .bind(&file_id)
+    .bind(&user.username)
+    .fetch_optional(pool.get_ref())
+    .await;
+
+    respond_with_file(
+        result,
+        if body.public {
+            "File is now public"
+        } else {
+            "File is now private"
+        },
+    )
 }
 
 async fn trash_file(
@@ -801,9 +892,11 @@ pub fn register(config: &mut ServiceConfig, app_config: &AppConfig) {
 
     config
         .route("/my", web::get().to(list_user_files))
+        .route("/public", web::get().to(list_public_files))
         .route("/search", web::get().to(search_user_files))
         .route("/{id}/download", web::get().to(download_file))
         .route("/{id}/share", web::post().to(create_share_link))
+        .route("/{id}/public", web::patch().to(set_file_visibility))
         .route("/{id}/trash", web::post().to(trash_file))
         .route("/{id}/restore", web::post().to(restore_file))
         .route("/{id}", web::patch().to(rename_file))

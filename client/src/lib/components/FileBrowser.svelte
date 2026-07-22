@@ -21,6 +21,7 @@
 		onView,
 		onDownload,
 		onRename,
+		onRestore,
 		onDelete,
 		onProperties,
 		onUpload
@@ -35,6 +36,7 @@
 		onView: (f: FilerFile) => void;
 		onDownload: (f: FilerFile) => void;
 		onRename: (f: FilerFile) => void;
+		onRestore: (f: FilerFile) => void;
 		onDelete: (f: FilerFile) => void;
 		onProperties: (f: FilerFile) => void;
 		onUpload: () => void;
@@ -73,7 +75,6 @@
 	const visible = $derived(sorted.slice(0, pageSize));
 
 	$effect(() => {
-		// Reset paging when list changes
 		files.length;
 		sortKey;
 		sortDir;
@@ -214,7 +215,7 @@
 							animate:flip={{ duration: 160 }}
 							data-active={activeId === f.id ? '1' : '0'}
 							onclick={() => onActiveId(f.id)}
-							ondblclick={() => onView(f)}
+							ondblclick={() => section !== 'trash' && onView(f)}
 							bind:this={rowEls[f.id]}
 						>
 							<td class={t.td()}>
@@ -251,18 +252,27 @@
 									class="flex justify-end gap-0.5 opacity-0 transition-opacity duration-100 group-hover/row:opacity-100 group-data-[active=1]/row:opacity-100"
 									onclick={(e) => e.stopPropagation()}
 								>
-									<IconButton variant="row" size="sm" title="Open" onclick={() => onView(f)}>
-										<Icon name="Eye" size={14} />
-									</IconButton>
-									<IconButton
-										variant="row"
-										size="sm"
-										title="Download"
-										onclick={() => onDownload(f)}
-									>
-										<Icon name="Download" size={14} />
-									</IconButton>
-									{#if section !== 'trash'}
+									{#if section === 'trash'}
+										<IconButton
+											variant="row"
+											size="sm"
+											title="Restore"
+											onclick={() => onRestore(f)}
+										>
+											<Icon name="Refresh" size={14} />
+										</IconButton>
+									{:else}
+										<IconButton variant="row" size="sm" title="Open" onclick={() => onView(f)}>
+											<Icon name="Eye" size={14} />
+										</IconButton>
+										<IconButton
+											variant="row"
+											size="sm"
+											title="Download"
+											onclick={() => onDownload(f)}
+										>
+											<Icon name="Download" size={14} />
+										</IconButton>
 										<IconButton variant="row" size="sm" title="Rename" onclick={() => onRename(f)}>
 											<Icon name="Pencil" size={14} />
 										</IconButton>
@@ -295,10 +305,11 @@
 							active={activeId === f.id}
 							{section}
 							onclick={() => onActiveId(f.id)}
-							ondblclick={() => onView(f)}
+							ondblclick={() => section !== 'trash' && onView(f)}
 							{onView}
 							{onDownload}
 							{onRename}
+							{onRestore}
 							{onDelete}
 							{onProperties}
 						/>

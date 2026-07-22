@@ -15,6 +15,7 @@
 		onView,
 		onDownload,
 		onRename,
+		onRestore,
 		onDelete,
 		onProperties
 	}: {
@@ -26,6 +27,7 @@
 		onView: (f: FilerFile) => void;
 		onDownload: (f: FilerFile) => void;
 		onRename: (f: FilerFile) => void;
+		onRestore: (f: FilerFile) => void;
 		onDelete: (f: FilerFile) => void;
 		onProperties: (f: FilerFile) => void;
 	} = $props();
@@ -49,14 +51,14 @@
   + `[data-active]` + `[data-menu-open]` rules.
 -->
 <div
-	class="group/tile relative flex cursor-default flex-col overflow-hidden rounded-[10px] border border-edge bg-surface transition-[border-color,box-shadow] duration-[120ms] hover:border-edge-strong data-[active=1]:border-accent data-[active=1]:shadow-[0_0_0_1px_var(--accent)]"
+	class="group/tile relative flex cursor-default flex-col rounded-[10px] border border-edge bg-surface transition-[border-color,box-shadow] duration-[120ms] hover:border-edge-strong data-[active=1]:border-accent data-[active=1]:shadow-[0_0_0_1px_var(--accent)] data-[menu-open=1]:z-10"
 	data-active={active ? '1' : '0'}
 	data-menu-open={menuOpen ? '1' : '0'}
 	{onclick}
 	{ondblclick}
 >
 	<div
-		class="relative grid aspect-[4/3] place-items-center overflow-hidden bg-sunken bg-cover bg-center"
+		class="relative grid aspect-[4/3] place-items-center overflow-hidden rounded-t-[10px] bg-sunken bg-cover bg-center"
 		data-thumb={file.thumb ? '1' : '0'}
 		style={file.thumb ? `background-image: url(${file.thumb})` : undefined}
 	>
@@ -82,9 +84,11 @@
 			class="absolute top-1.5 left-1.5 flex gap-1 opacity-0 transition-opacity duration-[120ms] group-hover/tile:opacity-100 group-data-[active=1]/tile:opacity-100 group-data-[menu-open=1]/tile:opacity-100"
 			onclick={(e) => e.stopPropagation()}
 		>
-			<IconButton variant="overlay" size="sm" title="Download" onclick={fire(onDownload)}>
-				<Icon name="Download" size={14} />
-			</IconButton>
+			{#if section !== 'trash'}
+				<IconButton variant="overlay" size="sm" title="Download" onclick={fire(onDownload)}>
+					<Icon name="Download" size={14} />
+				</IconButton>
+			{/if}
 			<IconButton
 				variant="overlay"
 				size="sm"
@@ -98,45 +102,53 @@
 			</IconButton>
 		</div>
 
-		{#if menuOpen}
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
-			<!--
-			  `contents` is load-bearing: the thumb is `grid place-items-center`, so a normal
-			  wrapper would become an in-flow grid item, add a second row, and shove the
-			  centred ext badge upward. display:contents keeps this node out of the box tree
-			  while still hosting the action and the click handler.
-			-->
-			<div
-				class="contents"
-				use:clickOutside={{ onOutside: () => (menuOpen = false) }}
-				onclick={(e) => e.stopPropagation()}
-			>
-				<Menu size="compact" class="top-[38px] left-1.5" flyY={-4} flyDuration={120}>
+	</div>
+
+	<!--
+	  The menu lives outside the thumb (which is `overflow-hidden` to clip the thumbnail
+	  and its rounded top): kept inside, the dropdown was clipped at the thumb's bottom
+	  edge, hiding Properties through the Delete item. `contents` keeps this wrapper out
+	  of the flex column's box tree so it adds no height; the absolute Menu anchors to the
+	  tile (the `relative` parent), and `top-[38px]` still lands it just under the actions.
+	-->
+	{#if menuOpen}
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div
+			class="contents"
+			use:clickOutside={{ onOutside: () => (menuOpen = false) }}
+			onclick={(e) => e.stopPropagation()}
+		>
+			<Menu size="compact" class="top-[38px] left-1.5" flyY={-4} flyDuration={120}>
+				{#if section === 'trash'}
+					<MenuItem onclick={fire(onRestore)}>
+						<Icon name="Refresh" size={14} />Restore
+					</MenuItem>
+				{:else}
 					<MenuItem onclick={fire(onView)}>
 						<Icon name="Eye" size={14} />Open
 					</MenuItem>
 					<MenuItem onclick={fire(onDownload)}>
 						<Icon name="Download" size={14} />Download
 					</MenuItem>
-					{#if section !== 'trash'}
-						<MenuItem onclick={fire(onRename)}>
-							<Icon name="Pencil" size={14} />Rename
-						</MenuItem>
-					{/if}
-					<MenuItem onclick={fire(onProperties)}>
-						<Icon name="Info" size={14} />Properties
+					<MenuItem onclick={fire(onRename)}>
+						<Icon name="Pencil" size={14} />Rename
 					</MenuItem>
-					<MenuSeparator />
-					<MenuItem danger onclick={fire(onDelete)}>
-						<Icon name="Trash" size={14} />
-						{section === 'trash' ? 'Delete permanently' : 'Move to Trash'}
-					</MenuItem>
-				</Menu>
-			</div>
-		{/if}
-	</div>
+				{/if}
+				<MenuItem onclick={fire(onProperties)}>
+					<Icon name="Info" size={14} />Properties
+				</MenuItem>
+				<MenuSeparator />
+				<MenuItem danger onclick={fire(onDelete)}>
+					<Icon name="Trash" size={14} />
+					{section === 'trash' ? 'Delete permanently' : 'Move to Trash'}
+				</MenuItem>
+			</Menu>
+		</div>
+	{/if}
 
-	<div class="flex flex-col gap-0.5 border-t border-edge px-[11px] pt-[9px] pb-[11px]">
+	<div
+		class="flex flex-col gap-0.5 rounded-b-[10px] border-t border-edge px-[11px] pt-[9px] pb-[11px]"
+	>
 		<div class="overflow-hidden text-[13px] font-medium text-ellipsis whitespace-nowrap">
 			{file.name}
 		</div>

@@ -26,6 +26,7 @@ struct UserRow {
     password: String,
     role: String,
     avatar: Option<String>,
+    status: String,
 }
 
 #[derive(Serialize)]
@@ -49,7 +50,7 @@ async fn login(
     config: web::Data<AppConfig>,
 ) -> impl Responder {
     let result = sqlx::query_as::<_, UserRow>(
-        "SELECT username, name, password, role, avatar FROM users WHERE username = ?",
+        "SELECT username, name, password, role, avatar, status FROM users WHERE username = ?",
     )
     .bind(&body.username)
     .fetch_one(pool.get_ref())
@@ -78,6 +79,13 @@ async fn login(
     if !password_match {
         return HttpResponse::Unauthorized()
             .json(ApiResponse::error("Incorrect username or password"));
+    }
+
+    // Checked only after the password verifies, so we don't reveal which
+    // accounts are suspended to an unauthenticated caller.
+    if row.status == "suspended" {
+        return HttpResponse::Forbidden()
+            .json(ApiResponse::error("Your account has been suspended"));
     }
 
     let claims = JwtClaims {

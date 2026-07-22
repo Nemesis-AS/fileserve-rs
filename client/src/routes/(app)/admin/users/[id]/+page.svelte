@@ -22,10 +22,9 @@
 	let user = $state<User | null>(null);
 	let name = $state('');
 	let username = $state('');
-	let email = $state('');
 	let role = $state<'user' | 'admin'>('user');
 	let status = $state<'active' | 'suspended'>('active');
-	let quotaGB = $state(50);
+	let quotaGB = $state(20);
 	let password = $state('');
 
 	onMount(async () => {
@@ -34,7 +33,6 @@
 		if (user) {
 			name = user.name;
 			username = user.username;
-			email = user.email ?? '';
 			role = user.role;
 			status = user.status ?? 'active';
 			quotaGB = user.quotaGB ?? 0;
@@ -43,16 +41,24 @@
 
 	async function handleSubmit(e: SubmitEvent) {
 		e.preventDefault();
-		await updateUser(userId, { name, email, role, status, quotaGB });
-		toastStore.show(`Saved changes to @${username}`);
-		goto('/admin/users');
+		try {
+			await updateUser(userId, { name, role, status, quotaGB, password: password || undefined });
+			toastStore.show(`Saved changes to @${username}`);
+			goto('/admin/users');
+		} catch (err) {
+			toastStore.show(err instanceof Error ? err.message : 'Failed to save changes');
+		}
 	}
 
 	async function handleDelete() {
 		if (!user) return;
-		await deleteUser(user.id);
-		toastStore.show(`Deleted user @${username}`);
-		goto('/admin/users');
+		try {
+			await deleteUser(user.id);
+			toastStore.show(`Deleted user @${username}`);
+			goto('/admin/users');
+		} catch (err) {
+			toastStore.show(err instanceof Error ? err.message : 'Failed to delete user');
+		}
 	}
 </script>
 
@@ -94,9 +100,6 @@
 						<Input value={username} disabled />
 					</Field>
 				</div>
-				<Field label="Email" hint="Used for password resets only." class="mb-0">
-					<Input type="email" bind:value={email} />
-				</Field>
 			</Section>
 
 			<Section label="Access">
@@ -126,11 +129,7 @@
 			</Section>
 
 			<Section label="Reset password">
-				<Field
-					label="New password"
-					hint="The user will be prompted to change it on next login."
-					class="mb-0"
-				>
+				<Field label="New password" class="mb-0">
 					<Input type="text" placeholder="Leave blank to keep current" bind:value={password} />
 				</Field>
 			</Section>

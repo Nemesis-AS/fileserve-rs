@@ -5,8 +5,8 @@
 	import Icon from '$lib/components/Icon.svelte';
 	import { authStore } from '$lib/stores/auth.svelte';
 	import { prefs } from '$lib/stores/prefs.svelte';
+	import { toastStore } from '$lib/stores/toast.svelte';
 	import { getUsers } from '$lib/services/users';
-	import { fmtDate } from '$lib/utils/file';
 	import type { User } from '$lib/types';
 	import { Page, PageHead } from '$lib/components/ui/page/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
@@ -18,7 +18,11 @@
 	let users = $state<User[]>([]);
 
 	onMount(async () => {
-		users = await getUsers();
+		try {
+			users = await getUsers();
+		} catch (e) {
+			toastStore.show(e instanceof Error ? e.message : 'Failed to load users');
+		}
 	});
 
 	const t = table({ variant: 'users' });
@@ -54,22 +58,21 @@
 				<th class={t.th({ class: 'w-[110px]' })}>Status</th>
 				<th class={t.th({ class: 'w-[200px]' })}>Storage</th>
 				<th class={t.th({ class: 'w-[80px]' })}>Files</th>
-				<th class={t.th({ class: 'w-[140px]' })}>Last seen</th>
 				<th class={t.th({ class: 'w-[30px]' })}></th>
 			</tr>
 		</thead>
 		<tbody>
 			{#each users as u (u.id)}
 				{@const used = u.usedGB ?? 0}
-				{@const quota = u.quotaGB ?? 0}
-				{@const pct = quota > 0 ? Math.min(100, (used / quota) * 100) : 0}
+				{@const quota = u.quotaGB}
+				{@const pct = quota && quota > 0 ? Math.min(100, (used / quota) * 100) : 0}
 				<tr class={t.tr({ class: 'cursor-pointer' })} onclick={() => goto(`/admin/users/${u.id}`)}>
 					<td class={t.td()}>
 						<div class="flex items-center gap-2.5">
 							<Avatar name={u.name} size="md" />
 							<div>
 								<div class="font-medium">{u.name}</div>
-								<div class="text-[11.5px] text-ink-muted">@{u.username} · {u.email}</div>
+								<div class="text-[11.5px] text-ink-muted">@{u.username}</div>
 							</div>
 						</div>
 					</td>
@@ -79,21 +82,26 @@
 						</Badge>
 					</td>
 					<td class={t.td()}>
-						<Badge tone={u.status} dot>
-							{u.status === 'active' ? 'Active' : 'Suspended'}
+						<Badge tone={u.status ?? 'active'} dot>
+							{u.status === 'suspended' ? 'Suspended' : 'Active'}
 						</Badge>
 					</td>
 					<td class={t.td()}>
 						<!-- .user-quota-mini — a slimmer quota bar than the sidebar's -->
 						<div class="flex min-w-[140px] flex-col gap-1">
-							<Meter value={pct} size="xs" />
-							<span class="text-[11.5px] text-ink-muted tabular-nums">
-								{used.toFixed(1)} / {quota} GB
-							</span>
+							{#if quota == null}
+								<span class="text-[11.5px] text-ink-muted tabular-nums">
+									{used.toFixed(1)} GB · no limit
+								</span>
+							{:else}
+								<Meter value={pct} size="xs" />
+								<span class="text-[11.5px] text-ink-muted tabular-nums">
+									{used.toFixed(1)} / {quota} GB
+								</span>
+							{/if}
 						</div>
 					</td>
-					<td class={t.td({ class: 'text-ink-muted tabular-nums' })}>{u.files}</td>
-					<td class={t.td({ class: 'text-ink-muted' })}>{u.lastSeen ? fmtDate(u.lastSeen) : '—'}</td>
+					<td class={t.td({ class: 'text-ink-muted tabular-nums' })}>{u.files ?? 0}</td>
 					<td class={t.td()}><Icon name="ChevronR" size={16} class="text-ink-faint" /></td>
 				</tr>
 			{/each}

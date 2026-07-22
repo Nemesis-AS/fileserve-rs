@@ -27,7 +27,6 @@
 	let queue = $state<UploadItem[]>([]);
 	let makePublic = $state(false);
 	let inputEl: HTMLInputElement | undefined = $state();
-	/** Lets `removeItem` cancel an in-flight upload rather than orphan it. */
 	const aborters = new Map<string, AbortController>();
 
 	function addFiles(fileList: FileList) {
@@ -62,7 +61,6 @@
 			);
 			patchItem(id, { progress: 100, state: 'done' });
 		} catch (e) {
-			// A cancel removed the row already — nothing left to mark as failed.
 			if (aborter.signal.aborted) return;
 			patchItem(id, { state: 'error', error: e instanceof Error ? e.message : 'Upload failed' });
 		} finally {
@@ -109,10 +107,6 @@
 		ondrop={onDrop}
 		onclick={() => inputEl?.click()}
 	>
-		<!--
-		  No mx-auto: preflight sets svg{display:block}, so the dropzone's text-align:center
-		  never centred this icon — it sat at the left edge. Centring it would be a redesign.
-		-->
 		<Icon name="Upload" size={28} />
 		<div class="text-[13px] font-medium text-ink">
 			Drop files here or <span class="text-accent-ink">browse</span>
@@ -133,10 +127,8 @@
 			<span>{allDone ? `${doneCount} uploaded` : `${Math.round(totalProgress)}%`}</span>
 		</div>
 
-		<!-- .upload-list -->
 		<div class="flex flex-col gap-2">
 			{#each queue as it (it.id)}
-				<!-- .upload-row: icon | name+progress | pct | remove -->
 				<div
 					class="grid grid-cols-[22px_1fr_auto_auto] items-center gap-2.5 px-1 py-2 text-[12.5px]"
 				>

@@ -7,10 +7,10 @@ Frontend: SvelteKit (client/)
 
 ### To Do
 
-- [ ] User creation routes
-- [ ] Trash
-- [ ] Storage Quota
-- [ ] Password Change
+- [x] User creation routes
+- [x] Trash
+- [x] Storage Quota
+- [x] Password Change
 - [ ] Audit Log
 
 ### Prerequisites

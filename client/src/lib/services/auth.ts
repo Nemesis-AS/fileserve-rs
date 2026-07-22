@@ -14,18 +14,12 @@ export interface LoginResult {
 	token: string;
 }
 
-/**
- * Reads the backend envelope and surfaces `message` as the thrown error, so the
- * UI shows the server's reason ("Incorrect username or password") rather than a
- * generic failure. Unlike the other services, this one has no mock fallback —
- * a failed request here means auth genuinely failed.
- */
 async function unwrap<T>(res: Response, fallbackMsg: string): Promise<T> {
 	let body: ApiEnvelope<T> | null = null;
 	try {
 		body = (await res.json()) as ApiEnvelope<T>;
 	} catch {
-		// Non-JSON response (proxy error, server down) — fall through.
+		// Non-JSON response (proxy error, server down) fall through.
 	}
 
 	if (!res.ok || !body?.success) {

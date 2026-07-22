@@ -5,26 +5,42 @@
 	import TopBar from '$lib/components/TopBar.svelte';
 	import FileIcon from '$lib/components/FileIcon.svelte';
 	import PropertiesModal from '$lib/components/PropertiesModal.svelte';
+	import DeleteConfirm from '$lib/components/DeleteConfirm.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import { authStore } from '$lib/stores/auth.svelte';
 	import { prefs } from '$lib/stores/prefs.svelte';
 	import { toastStore } from '$lib/stores/toast.svelte';
-	import { getFiles, toggleShare, downloadFile } from '$lib/services/files';
+	import {
+		getFiles,
+		getPublicFiles,
+		toggleShare,
+		downloadFile,
+		trashFile,
+		restoreFile,
+		deleteFile
+	} from '$lib/services/files';
 	import { TEXT_PREVIEWS } from '$lib/mock/data';
 	import type { FilerFile } from '$lib/types';
 	import { fmtSize, fmtDate } from '$lib/utils/file';
+	import { clickOutside } from '$lib/actions/clickOutside';
 	import { Button } from '$lib/components/ui/button/index.js';
+	import { IconButton } from '$lib/components/ui/icon-button/index.js';
 	import { BackButton } from '$lib/components/ui/back-button/index.js';
+	import { Menu, MenuItem, MenuSeparator } from '$lib/components/ui/menu/index.js';
 
 	const fileId = $derived($page.params.id);
 	const section = $derived($page.params.section);
 
 	let file = $state<FilerFile | null>(null);
 	let propsFile = $state<FilerFile | null>(null);
+	let menuOpen = $state(false);
+	let showDelete = $state(false);
 
 	onMount(async () => {
 		try {
-			const files = await getFiles();
+			// A public file may belong to another user, so it won't be in the
+			// caller's own list — resolve it from the cross-owner listing instead.
+			const files = section === 'public' ? await getPublicFiles() : await getFiles();
 			file = files.find((f) => f.id === fileId) ?? null;
 		} catch (e) {
 			toastStore.show(e instanceof Error ? e.message : 'Could not load file');
@@ -36,9 +52,52 @@
 	}
 
 	async function handleToggleShare(f: FilerFile, makePublic: boolean) {
-		const updated = await toggleShare(f, makePublic);
-		file = updated;
-		if (propsFile) propsFile = updated;
+		try {
+			const updated = await toggleShare(f, makePublic);
+			file = updated;
+			if (propsFile) propsFile = updated;
+		} catch (e) {
+			toastStore.show(e instanceof Error ? e.message : 'Could not update sharing');
+		}
+	}
+
+	/** Trash (or permanently delete, in the Trash section) then return to the list — the file leaves this view either way. */
+	async function handleDelete() {
+		if (!file) return;
+		const f = file;
+		showDelete = false;
+		try {
+			if (section === 'trash') {
+				await deleteFile(f.id);
+				toastStore.show(`Deleted "${f.name}" permanently`);
+			} else {
+				await trashFile(f.id);
+				// Undo restores server-side too, matching the list view's behaviour.
+				toastStore.show(`Moved "${f.name}" to Trash`, async () => {
+					try {
+						await restoreFile(f.id);
+					} catch (e) {
+						toastStore.show(e instanceof Error ? e.message : 'Could not restore file');
+					}
+				});
+			}
+			goto(`/files/${section}`);
+		} catch (e) {
+			toastStore.show(e instanceof Error ? e.message : 'Could not delete file');
+		}
+	}
+
+	async function handleRestore() {
+		if (!file) return;
+		const f = file;
+		menuOpen = false;
+		try {
+			await restoreFile(f.id);
+			toastStore.show(`Restored "${f.name}"`);
+			goto(`/files/${section}`);
+		} catch (e) {
+			toastStore.show(e instanceof Error ? e.message : 'Could not restore file');
+		}
 	}
 
 	// .viewer__fallback — shared by the img/vid/aud/unknown branches below
@@ -46,7 +105,7 @@
 </script>
 
 <TopBar
-	crumbs={['filer', 'Files']}
+	crumbs={['fileserve.rs', 'Files']}
 	dark={prefs.dark}
 	onToggleDark={() => (prefs.dark = !prefs.dark)}
 	user={authStore.user!}
@@ -78,10 +137,51 @@
 					<Icon name="Info" size={14} />
 					Properties
 				</Button>
-				<Button onclick={handleDownload}>
-					<Icon name="Download" size={14} />
-					Download
-				</Button>
+				{#if section !== 'trash'}
+					<Button onclick={handleDownload}>
+						<Icon name="Download" size={14} />
+						Download
+					</Button>
+				{/if}
+
+				<div
+					class="relative"
+					use:clickOutside={{ enabled: menuOpen, onOutside: () => (menuOpen = false) }}
+				>
+					<IconButton title="More options" onclick={() => (menuOpen = !menuOpen)}>
+						<Icon name="More" size={16} />
+					</IconButton>
+
+					{#if menuOpen}
+						<Menu class="top-[calc(100%+6px)] right-0">
+							{#if section === 'trash'}
+								<MenuItem onclick={handleRestore}>
+									<Icon name="Refresh" size={14} />Restore
+								</MenuItem>
+								<MenuSeparator />
+								<MenuItem
+									danger
+									onclick={() => {
+										menuOpen = false;
+										showDelete = true;
+									}}
+								>
+									<Icon name="Trash" size={14} />Delete permanently
+								</MenuItem>
+							{:else}
+								<MenuItem
+									danger
+									onclick={() => {
+										menuOpen = false;
+										showDelete = true;
+									}}
+								>
+									<Icon name="Trash" size={14} />Move to Trash
+								</MenuItem>
+							{/if}
+						</Menu>
+					{/if}
+				</div>
 			</div>
 		</div>
 
@@ -137,9 +237,11 @@
 					<FileIcon {file} large />
 					<div class="text-[14px]">This file type can't be previewed</div>
 					<div class="text-[12.5px]">Download it to view in another app.</div>
-					<Button onclick={handleDownload}>
-						<Icon name="Download" size={14} />Download
-					</Button>
+					{#if section !== 'trash'}
+						<Button onclick={handleDownload}>
+							<Icon name="Download" size={14} />Download
+						</Button>
+					{/if}
 				</div>
 			{/if}
 		</div>
@@ -150,6 +252,15 @@
 			file={propsFile}
 			onClose={() => (propsFile = null)}
 			onToggleShare={handleToggleShare}
+		/>
+	{/if}
+
+	{#if showDelete}
+		<DeleteConfirm
+			file={file!}
+			inTrash={section === 'trash'}
+			onClose={() => (showDelete = false)}
+			onConfirm={handleDelete}
 		/>
 	{/if}
 {/if}

@@ -17,12 +17,15 @@
 		screen: string;
 		isAdmin: boolean;
 		counts: { my: number; public: number; trash: number; users: number };
-		quota: { used: number; total: number };
+		/** `total` in GB; null means no quota limit. */
+		quota: { used: number; total: number | null };
 		onSection: (s: FileSection) => void;
 		onNav: (n: string) => void;
 	} = $props();
 
-	const pct = $derived(Math.min(100, (quota.used / quota.total) * 100));
+	const pct = $derived(
+		quota.total && quota.total > 0 ? Math.min(100, (quota.used / quota.total) * 100) : 0
+	);
 </script>
 
 <aside class="flex min-h-0 w-[232px] flex-col overflow-hidden border-r border-edge bg-elevated">
@@ -32,7 +35,7 @@
 		<div class="grid size-[22px] shrink-0 place-items-center rounded-md bg-ink text-surface">
 			<Icon name="Files" size={13} />
 		</div>
-		filer
+		fileserve.rs
 	</div>
 
 	<nav class="scroll-area flex flex-1 flex-col gap-px overflow-y-auto px-2 py-1">
@@ -91,12 +94,20 @@
 	>
 		<div class="flex justify-between">
 			<span>Storage</span>
-			<span><b class="font-medium text-ink">{quota.used.toFixed(1)}</b> / {quota.total} GB</span>
+			{#if quota.total == null}
+				<span><b class="font-medium text-ink">{quota.used.toFixed(1)}</b> GB used</span>
+			{:else}
+				<span><b class="font-medium text-ink">{quota.used.toFixed(1)}</b> / {quota.total} GB</span>
+			{/if}
 		</div>
-		<Meter value={pct} />
-		<div class="flex justify-between text-[11px]">
-			<span class="text-ink-faint">{(quota.total - quota.used).toFixed(1)} GB free</span>
-			<span class="text-ink-faint">{Math.round(pct)}%</span>
-		</div>
+		{#if quota.total == null}
+			<span class="text-[11px] text-ink-faint">No quota limit</span>
+		{:else}
+			<Meter value={pct} />
+			<div class="flex justify-between text-[11px]">
+				<span class="text-ink-faint">{Math.max(0, quota.total - quota.used).toFixed(1)} GB free</span>
+				<span class="text-ink-faint">{Math.round(pct)}%</span>
+			</div>
+		{/if}
 	</div>
 </aside>

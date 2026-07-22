@@ -4,7 +4,7 @@ use sqlx::FromRow;
 /// Column list shared by every `files` query that hydrates a [`FileRecord`].
 /// `SELECT *` would also pull `file_dir`, which no consumer needs yet.
 pub const FILE_COLUMNS: &str =
-    "id, file_name, mime_type, file_size, checksum, owner_uname, created_at, deleted_at";
+    "id, file_name, mime_type, file_size, checksum, owner_uname, public, created_at, deleted_at";
 
 #[derive(FromRow, Serialize)]
 pub struct FileRecord {
@@ -14,6 +14,10 @@ pub struct FileRecord {
     pub file_size: i64,
     pub checksum: String,
     pub owner_uname: String,
+    /// Persistent visibility flag. When true, any authenticated user can list
+    /// the file via `GET /files/public` and download it; only the owner can
+    /// flip it. Independent of the time-limited JWT share links.
+    pub public: bool,
     /// Timestamps travel as strings, not chrono types: `created_at` carries
     /// SQLite's `date()` default (`YYYY-MM-DD`) while `deleted_at` is written as
     /// a full ISO-8601 instant, so the two columns hold different shapes and

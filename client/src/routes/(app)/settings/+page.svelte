@@ -5,11 +5,11 @@
 	import Icon from '$lib/components/Icon.svelte';
 	import { authStore } from '$lib/stores/auth.svelte';
 	import { prefs } from '$lib/stores/prefs.svelte';
+	import { toastStore } from '$lib/stores/toast.svelte';
+	import { changePassword, updateProfile } from '$lib/services/users';
 	import type { Density, ViewMode } from '$lib/types';
-	import { fmtDate } from '$lib/utils/file';
 	import { Page, PageHead } from '$lib/components/ui/page/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Section } from '$lib/components/ui/section/index.js';
 	import { Field } from '$lib/components/ui/field/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
@@ -17,37 +17,40 @@
 
 	let tab = $state('profile');
 	let name = $state(authStore.user?.name ?? '');
-	let email = $state(authStore.user?.email ?? '');
 	let pwOld = $state('');
 	let pwNew = $state('');
 	let pwNew2 = $state('');
 	let saved = $state('');
-
-	const SESSIONS = [
-		{ id: 's1', device: 'Firefox · macOS', ip: '10.0.1.42', location: 'Home LAN', lastActive: new Date().toISOString(), current: true },
-		{ id: 's2', device: 'Safari · iPhone', ip: '10.0.1.86', location: 'Home LAN', lastActive: new Date(Date.now() - 4 * 3_600_000).toISOString(), current: false },
-		{ id: 's3', device: 'Chrome · Windows', ip: '24.118.49.10', location: 'Cellular', lastActive: new Date(Date.now() - 2 * 86_400_000).toISOString(), current: false },
-	];
 
 	function flashSaved(msg: string) {
 		saved = msg;
 		setTimeout(() => (saved = ''), 2000);
 	}
 
-	function saveProfile(e: SubmitEvent) {
+	async function saveProfile(e: SubmitEvent) {
 		e.preventDefault();
-		authStore.updateUser({ name, email });
-		flashSaved('Profile saved');
+		try {
+			const updated = await updateProfile({ name });
+			authStore.updateUser(updated);
+			flashSaved('Profile saved');
+		} catch (err) {
+			toastStore.show(err instanceof Error ? err.message : 'Could not save profile');
+		}
 	}
 
-	function savePassword(e: SubmitEvent) {
+	async function savePassword(e: SubmitEvent) {
 		e.preventDefault();
 		if (pwNew !== pwNew2) {
-			flashSaved("Passwords don't match");
+			toastStore.show("New passwords don't match");
 			return;
 		}
-		pwOld = ''; pwNew = ''; pwNew2 = '';
-		flashSaved('Password updated');
+		try {
+			await changePassword(pwOld, pwNew);
+			pwOld = ''; pwNew = ''; pwNew2 = '';
+			flashSaved('Password updated');
+		} catch (err) {
+			toastStore.show(err instanceof Error ? err.message : 'Could not update password');
+		}
 	}
 
 	const DENSITY_OPTIONS: { value: Density; label: string }[] = [
@@ -74,7 +77,6 @@
 	const TABS: [string, string][] = [
 		['profile', 'Profile'],
 		['security', 'Security'],
-		['sessions', 'Sessions'],
 		['prefs', 'Preferences']
 	];
 </script>
@@ -125,9 +127,6 @@
 								<Input value={authStore.user?.username} disabled />
 							</Field>
 						</div>
-						<Field label="Email" hint="Used for password resets only." class="mb-0">
-							<Input type="email" bind:value={email} />
-						</Field>
 					</Section>
 					<div><Button type="submit">Save changes</Button></div>
 				</form>
@@ -145,57 +144,8 @@
 						</Field>
 					</Section>
 
-					<Section label="Two-factor authentication">
-						<!-- .settings-tfa -->
-						<div class="flex items-center gap-[14px] py-1">
-							<div class="flex-1">
-								<div class="text-[13.5px] font-medium">Authenticator app</div>
-								<div class="text-[12px] text-ink-muted">
-									Not enabled — generate codes from any TOTP app (1Password, Aegis, …)
-								</div>
-							</div>
-							<Button variant="ghost">Set up</Button>
-						</div>
-					</Section>
-
 					<div><Button type="submit">Update password</Button></div>
 				</form>
-			{:else if tab === 'sessions'}
-				<Section label="Active sessions">
-					<!-- .sessions -->
-					<ul class="m-0 flex list-none flex-col gap-1 p-0">
-						{#each SESSIONS as s (s.id)}
-							<li class="flex items-center gap-3 border-b border-edge py-2.5 last:border-b-0">
-								<div
-									class="grid size-8 shrink-0 place-items-center rounded-[7px] bg-sunken text-ink-muted"
-								>
-									<Icon name="Settings" size={16} />
-								</div>
-								<div class="flex-1">
-									<div class="text-[13.5px] font-medium">
-										{s.device}
-										{#if s.current}
-											<Badge tone="active" dot class="ml-2">This device</Badge>
-										{/if}
-									</div>
-									<div class="text-[11.5px] text-ink-muted">
-										{s.ip} · {s.location} · last active {fmtDate(s.lastActive)}
-									</div>
-								</div>
-								{#if !s.current}
-									<Button variant="ghost" class={SMALL}>Sign out</Button>
-								{/if}
-							</li>
-						{/each}
-					</ul>
-					<Button
-						variant="ghost"
-						class="mt-1.5 self-start"
-						onclick={() => flashSaved('Signed out of 2 other sessions')}
-					>
-						Sign out of all other sessions
-					</Button>
-				</Section>
 			{:else if tab === 'prefs'}
 				<Section label="Appearance">
 					<div class={PREFS_ROW}>
