@@ -40,6 +40,9 @@ impl ApiResponse<()> {
 #[derive(Deserialize)]
 pub struct DownloadQuery {
     pub token: Option<String>,
+    /// When true, serve with `Content-Disposition: inline` so the browser
+    /// renders the file (image, PDF) in-page instead of downloading it.
+    pub inline: Option<bool>,
 }
 
 #[derive(Deserialize)]

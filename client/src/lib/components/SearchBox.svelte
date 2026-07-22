@@ -29,6 +29,7 @@
 	const MAX_RESULTS = 8;
 	const DEBOUNCE_MS = 180;
 
+	// svelte-ignore state_referenced_locally
 	let query = $state(initialValue);
 	let results = $state<FilerFile[]>([]);
 	let open = $state(false);

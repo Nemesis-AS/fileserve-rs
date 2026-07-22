@@ -4,6 +4,8 @@
 	import { onMount } from 'svelte';
 	import TopBar from '$lib/components/TopBar.svelte';
 	import FileIcon from '$lib/components/FileIcon.svelte';
+	import AudioPlayer from '$lib/components/AudioPlayer.svelte';
+	import VideoPlayer from '$lib/components/VideoPlayer.svelte';
 	import PropertiesModal from '$lib/components/PropertiesModal.svelte';
 	import DeleteConfirm from '$lib/components/DeleteConfirm.svelte';
 	import Icon from '$lib/components/Icon.svelte';
@@ -17,11 +19,11 @@
 		downloadFile,
 		trashFile,
 		restoreFile,
-		deleteFile
+		deleteFile,
+		previewUrl
 	} from '$lib/services/files';
-	import { TEXT_PREVIEWS } from '$lib/mock/data';
 	import type { FilerFile } from '$lib/types';
-	import { fmtSize, fmtDate } from '$lib/utils/file';
+	import { fmtSize, fmtDate, isTextPreviewable } from '$lib/utils/file';
 	import { clickOutside } from '$lib/actions/clickOutside';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { IconButton } from '$lib/components/ui/icon-button/index.js';
@@ -35,6 +37,50 @@
 	let propsFile = $state<FilerFile | null>(null);
 	let menuOpen = $state(false);
 	let showDelete = $state(false);
+
+	// Text preview: rendering a huge file into a <pre> would freeze the tab, so
+	// we cap what we'll fetch and offer download instead past the limit.
+	const MAX_TEXT_PREVIEW_BYTES = 2 * 1024 * 1024;
+	type TextState =
+		| { status: 'loading' }
+		| { status: 'ready'; body: string }
+		| { status: 'too-large' }
+		| { status: 'error' };
+	let textState = $state<TextState | null>(null);
+	let imgFailed = $state(false);
+
+	// Load the raw bytes for text-like files once the record resolves. Keyed on
+	// file.id so it re-runs if the viewer is reused for a different file.
+	$effect(() => {
+		const f = file;
+		imgFailed = false;
+		if (!f || f.category === 'img' || !isTextPreviewable(f.name)) {
+			textState = null;
+			return;
+		}
+		if (f.size > MAX_TEXT_PREVIEW_BYTES) {
+			textState = { status: 'too-large' };
+			return;
+		}
+
+		let cancelled = false;
+		textState = { status: 'loading' };
+		fetch(previewUrl(f.id), { credentials: 'include' })
+			.then((res) => {
+				if (!res.ok) throw new Error(`HTTP ${res.status}`);
+				return res.text();
+			})
+			.then((body) => {
+				if (!cancelled) textState = { status: 'ready', body };
+			})
+			.catch(() => {
+				if (!cancelled) textState = { status: 'error' };
+			});
+
+		return () => {
+			cancelled = true;
+		};
+	});
 
 	onMount(async () => {
 		try {
@@ -187,51 +233,62 @@
 
 		<!-- .viewer__stage -->
 		<div class="scroll-area grid flex-1 place-items-center overflow-auto p-8">
-			{#if file.category === 'img' && file.thumb}
+			{#if file.category === 'img' && !imgFailed}
 				<img
 					class="max-h-full max-w-full rounded-lg shadow-pop"
-					src={file.thumb.replace(/w=400/, 'w=1600')}
+					src={file.thumb ? file.thumb.replace(/w=400/, 'w=1600') : previewUrl(file.id)}
 					alt={file.name}
+					onerror={() => (imgFailed = true)}
 				/>
 			{:else if file.category === 'img'}
 				<div class={fallback}>
 					<FileIcon {file} large />
 					<div class="text-[14px]">Preview unavailable</div>
-					<div class="text-[12.5px]">This file is shown when downloaded.</div>
+					<div class="text-[12.5px]">This image couldn't be shown. Download it to view.</div>
 				</div>
-			{:else if TEXT_PREVIEWS[file.name]}
+			{:else if isTextPreviewable(file.name)}
 				<!-- .viewer__text -->
-				<pre
-					class="scroll-area max-h-full w-[min(820px,100%)] overflow-auto rounded-[10px] border border-edge bg-surface px-9 py-7 font-code text-[13px] leading-[1.7] whitespace-pre-wrap text-ink shadow-xs">{TEXT_PREVIEWS[
-						file.name
-					]}</pre>
+				{#if textState?.status === 'ready'}
+					<pre
+						class="scroll-area max-h-full w-[min(820px,100%)] overflow-auto rounded-[10px] border border-edge bg-surface px-9 py-7 font-code text-[13px] leading-[1.7] whitespace-pre-wrap text-ink shadow-xs">{textState.body}</pre>
+				{:else if textState?.status === 'loading'}
+					<div class={fallback}>
+						<div class="text-[13.5px]">Loading preview…</div>
+					</div>
+				{:else if textState?.status === 'too-large'}
+					<div class={fallback}>
+						<FileIcon {file} large />
+						<div class="text-[14px]">File too large to preview</div>
+						<div class="text-[12.5px]">This file is {fmtSize(file.size)}. Download it to view.</div>
+						{#if section !== 'trash'}
+							<Button onclick={handleDownload}>
+								<Icon name="Download" size={14} />Download
+							</Button>
+						{/if}
+					</div>
+				{:else}
+					<div class={fallback}>
+						<FileIcon {file} large />
+						<div class="text-[14px]">Couldn't load preview</div>
+						<div class="text-[12.5px]">Download it to view in another app.</div>
+						{#if section !== 'trash'}
+							<Button onclick={handleDownload}>
+								<Icon name="Download" size={14} />Download
+							</Button>
+						{/if}
+					</div>
+				{/if}
 			{:else if file.category === 'pdf'}
-				<!-- .viewer__doc -->
-				<div
-					class="scroll-area max-h-full w-[min(740px,100%)] overflow-auto rounded-[10px] border border-edge bg-surface px-16 py-14 text-[14px] leading-[1.65] text-ink shadow-xs"
-				>
-					<h1 class="mt-0 mb-2.5 text-[22px] tracking-[-0.01em]">{file.name.replace(/\.pdf$/, '')}</h1>
-					<p class="mt-0 text-ink-muted">PDF · {fmtSize(file.size)} · Page 1 of 4</p>
-					<h2 class="mt-[22px] mb-2 text-[16px]">Section 1</h2>
-					<p>
-						This is a rendered preview of the PDF. The real viewer would embed the document using
-						PDF.js or the browser's native viewer.
-					</p>
-					<h2 class="mt-[22px] mb-2 text-[16px]">Section 2</h2>
-					<p>Use the toolbar at the top to download, share, or open the file's properties.</p>
-				</div>
+				<!-- .viewer__doc — browser's native PDF viewer -->
+				<iframe
+					class="h-full w-full max-w-[1100px] rounded-[10px] border border-edge bg-surface shadow-xs"
+					src={previewUrl(file.id)}
+					title={file.name}
+				></iframe>
 			{:else if file.category === 'vid'}
-				<div class={fallback}>
-					<FileIcon {file} large />
-					<div class="text-[14px]">Video preview</div>
-					<div class="text-[12.5px]">The player would mount here.</div>
-				</div>
+				<VideoPlayer src={previewUrl(file.id)} name={file.name} />
 			{:else if file.category === 'aud'}
-				<div class={fallback}>
-					<FileIcon {file} large />
-					<div class="text-[14px]">Audio preview</div>
-					<div class="text-[12.5px]">The player would mount here.</div>
-				</div>
+				<AudioPlayer src={previewUrl(file.id)} name={file.name} />
 			{:else}
 				<div class={fallback}>
 					<FileIcon {file} large />

@@ -581,10 +581,18 @@ async fn download_file(
         .parse()
         .unwrap_or(mime::APPLICATION_OCTET_STREAM);
 
+    // Inline lets the browser render the file in a preview (img/iframe);
+    // attachment (the default) forces the save dialog.
+    let disposition = if query.inline.unwrap_or(false) {
+        DispositionType::Inline
+    } else {
+        DispositionType::Attachment
+    };
+
     let named_file = named_file
         .set_content_type(content_type)
         .set_content_disposition(ContentDisposition {
-            disposition: DispositionType::Attachment,
+            disposition,
             parameters: vec![DispositionParam::Filename(file.file_name.clone())],
         });
 

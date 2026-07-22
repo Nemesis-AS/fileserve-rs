@@ -26,9 +26,34 @@ const EXT_CAT: Record<string, FileCategory> = {
 	csv: 'data', json: 'data', xlsx: 'data', tsv: 'data', sql: 'data'
 };
 
+/**
+ * Extensions we can safely render as plain text in the viewer. Deliberately
+ * explicit rather than category-based: the `data` category includes binary
+ * `xlsx`, and `doc` includes binary `docx`/`odt`/`rtf`, so neither maps cleanly
+ * to "is text". Covers code, config, and markup that's human-readable as-is.
+ */
+const TEXT_EXTS = new Set([
+	// plain / docs
+	'txt', 'text', 'md', 'markdown', 'rst', 'log',
+	// config
+	'ini', 'conf', 'cfg', 'config', 'env', 'properties',
+	'yaml', 'yml', 'toml',
+	// data / markup
+	'json', 'jsonc', 'csv', 'tsv', 'xml', 'sql',
+	// code
+	'py', 'js', 'mjs', 'cjs', 'ts', 'tsx', 'jsx', 'go', 'rs',
+	'c', 'cc', 'cpp', 'h', 'hpp', 'sh', 'bash', 'zsh', 'java',
+	'kt', 'rb', 'php', 'pl', 'lua', 'r', 'html', 'htm',
+	'css', 'scss', 'sass', 'less', 'vue', 'svelte'
+]);
+
 export function extOf(name: string): string {
 	const i = name.lastIndexOf('.');
 	return i < 0 ? '' : name.slice(i + 1).toLowerCase();
+}
+
+export function isTextPreviewable(name: string): boolean {
+	return TEXT_EXTS.has(extOf(name));
 }
 
 export function fileCategory(name: string): FileCategory {

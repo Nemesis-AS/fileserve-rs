@@ -143,6 +143,15 @@ export function downloadUrl(id: string): string {
 	return `${API}/files/${id}/download`;
 }
 
+/**
+ * Same endpoint as {@link downloadUrl}, but asks the server for
+ * `Content-Disposition: inline` so the browser renders it in-page (image
+ * `src`, PDF `iframe`, or a `fetch` for text) instead of triggering a save.
+ */
+export function previewUrl(id: string): string {
+	return `${API}/files/${id}/download?inline=true`;
+}
+
 export function downloadFile(file: FilerFile): void {
 	const a = document.createElement('a');
 	a.href = downloadUrl(file.id);

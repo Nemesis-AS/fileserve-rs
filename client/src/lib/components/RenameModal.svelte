@@ -15,6 +15,7 @@
 		onRename: (newName: string) => void;
 	} = $props();
 
+	// svelte-ignore state_referenced_locally
 	let name = $state(file.name);
 	let inputEl: HTMLInputElement | undefined = $state();
 

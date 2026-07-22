@@ -71,11 +71,11 @@ export const MOCK_FILES: FilerFile[] = [
 ];
 
 export const MOCK_USERS: User[] = [
-	{ id: 'u1', name: 'Alex Chen', username: 'alex', email: 'alex@home.lan', role: 'admin', status: 'active', quotaGB: 200, usedGB: 84.2, lastSeen: D(0, 0.1), files: 28 },
-	{ id: 'u2', name: 'Sam Reyes', username: 'sam', email: 'sam@home.lan', role: 'user', status: 'active', quotaGB: 50, usedGB: 12.4, lastSeen: D(0, 6), files: 14 },
-	{ id: 'u3', name: 'Leo Park', username: 'leo', email: 'leo@home.lan', role: 'user', status: 'active', quotaGB: 50, usedGB: 31.8, lastSeen: D(1, 2), files: 41 },
-	{ id: 'u4', name: 'Mira Patel', username: 'mira', email: 'mira@home.lan', role: 'user', status: 'active', quotaGB: 50, usedGB: 4.2, lastSeen: D(3), files: 6 },
-	{ id: 'u5', name: 'Jules Kim', username: 'jules', email: 'jules@home.lan', role: 'user', status: 'suspended', quotaGB: 50, usedGB: 8.1, lastSeen: D(22), files: 11 }
+	{ id: 'u1', name: 'Alex Chen', username: 'alex', role: 'admin', status: 'active', quotaGB: 200, usedGB: 84.2, lastSeen: D(0, 0.1), files: 28 },
+	{ id: 'u2', name: 'Sam Reyes', username: 'sam', role: 'user', status: 'active', quotaGB: 50, usedGB: 12.4, lastSeen: D(0, 6), files: 14 },
+	{ id: 'u3', name: 'Leo Park', username: 'leo', role: 'user', status: 'active', quotaGB: 50, usedGB: 31.8, lastSeen: D(1, 2), files: 41 },
+	{ id: 'u4', name: 'Mira Patel', username: 'mira', role: 'user', status: 'active', quotaGB: 50, usedGB: 4.2, lastSeen: D(3), files: 6 },
+	{ id: 'u5', name: 'Jules Kim', username: 'jules', role: 'user', status: 'suspended', quotaGB: 50, usedGB: 8.1, lastSeen: D(22), files: 11 }
 ];
 
 const AT = (mins: number) => new Date(NOW - mins * 60_000).toISOString();
