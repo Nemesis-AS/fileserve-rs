@@ -60,7 +60,9 @@
 		</thead>
 		<tbody>
 			{#each users as u (u.id)}
-				{@const pct = Math.min(100, (u.usedGB / u.quotaGB) * 100)}
+				{@const used = u.usedGB ?? 0}
+				{@const quota = u.quotaGB ?? 0}
+				{@const pct = quota > 0 ? Math.min(100, (used / quota) * 100) : 0}
 				<tr class={t.tr({ class: 'cursor-pointer' })} onclick={() => goto(`/admin/users/${u.id}`)}>
 					<td class={t.td()}>
 						<div class="flex items-center gap-2.5">
@@ -86,12 +88,12 @@
 						<div class="flex min-w-[140px] flex-col gap-1">
 							<Meter value={pct} size="xs" />
 							<span class="text-[11.5px] text-ink-muted tabular-nums">
-								{u.usedGB.toFixed(1)} / {u.quotaGB} GB
+								{used.toFixed(1)} / {quota} GB
 							</span>
 						</div>
 					</td>
 					<td class={t.td({ class: 'text-ink-muted tabular-nums' })}>{u.files}</td>
-					<td class={t.td({ class: 'text-ink-muted' })}>{fmtDate(u.lastSeen)}</td>
+					<td class={t.td({ class: 'text-ink-muted' })}>{u.lastSeen ? fmtDate(u.lastSeen) : '—'}</td>
 					<td class={t.td()}><Icon name="ChevronR" size={16} class="text-ink-faint" /></td>
 				</tr>
 			{/each}

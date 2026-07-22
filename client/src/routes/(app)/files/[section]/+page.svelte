@@ -11,7 +11,16 @@
 	import { authStore } from '$lib/stores/auth.svelte';
 	import { prefs } from '$lib/stores/prefs.svelte';
 	import { toastStore } from '$lib/stores/toast.svelte';
-	import { getFiles, trashFile, deleteFile, renameFile, toggleShare, filterBySection } from '$lib/services/files';
+	import {
+		getFiles,
+		trashFile,
+		restoreFile,
+		deleteFile,
+		renameFile,
+		downloadFile,
+		toggleShare,
+		filterBySection
+	} from '$lib/services/files';
 	import type { FilerFile, FileSection } from '$lib/types';
 
 	const sectionParam = $derived($page.params.section as FileSection);
@@ -25,9 +34,15 @@
 	let deleteTarget = $state<FilerFile | null>(null);
 	let searchEl = $state<HTMLInputElement | null>(null);
 
-	onMount(async () => {
-		allFiles = await getFiles();
-	});
+	async function refresh() {
+		try {
+			allFiles = await getFiles();
+		} catch (e) {
+			toastStore.show(e instanceof Error ? e.message : 'Could not load files');
+		}
+	}
+
+	onMount(refresh);
 
 	const sectionFiles = $derived.by(() => {
 		const list = filterBySection(allFiles, sectionParam);
@@ -46,34 +61,53 @@
 	}
 
 	function handleDownload(f: FilerFile) {
-		toastStore.show(`Downloading "${f.name}"`);
+		downloadFile(f);
+	}
+
+	function replace(updated: FilerFile) {
+		allFiles = allFiles.map((x) => (x.id === updated.id ? updated : x));
+	}
+
+	/** Surfaces the server's reason in a toast instead of failing silently. */
+	function fail(e: unknown, fallback: string) {
+		toastStore.show(e instanceof Error ? e.message : fallback);
 	}
 
 	async function handleDelete(f: FilerFile) {
 		deleteTarget = null;
-		if (sectionParam === 'trash') {
-			await deleteFile(f.id);
-			allFiles = allFiles.filter((x) => x.id !== f.id);
-			toastStore.show(`Deleted "${f.name}" permanently`);
-		} else {
-			await trashFile(f.id);
-			const prev = { ...f };
-			allFiles = allFiles.map((x) => x.id === f.id ? { ...x, trashed: true, trashedAt: new Date().toISOString() } : x);
-			toastStore.show(`Moved "${f.name}" to Trash`, () => {
-				allFiles = allFiles.map((x) => x.id === f.id ? { ...x, trashed: false, trashedAt: null } : x);
-			});
+		try {
+			if (sectionParam === 'trash') {
+				await deleteFile(f.id);
+				allFiles = allFiles.filter((x) => x.id !== f.id);
+				toastStore.show(`Deleted "${f.name}" permanently`);
+			} else {
+				replace(await trashFile(f.id));
+				// Undo restores server-side too, so the row survives a reload.
+				toastStore.show(`Moved "${f.name}" to Trash`, async () => {
+					try {
+						replace(await restoreFile(f.id));
+					} catch (e) {
+						fail(e, 'Could not restore file');
+					}
+				});
+			}
+		} catch (e) {
+			fail(e, 'Could not delete file');
 		}
 	}
 
 	async function handleRename(f: FilerFile, newName: string) {
 		renameTarget = null;
-		const updated = await renameFile(f.id, newName);
-		allFiles = allFiles.map((x) => x.id === f.id ? updated : x);
+		try {
+			replace(await renameFile(f.id, newName));
+		} catch (e) {
+			fail(e, 'Could not rename file');
+		}
 	}
 
 	async function handleToggleShare(f: FilerFile, makePublic: boolean) {
-		const updated = await toggleShare(f.id, makePublic);
-		allFiles = allFiles.map((x) => x.id === f.id ? updated : x);
+		const updated = await toggleShare(f, makePublic);
+		replace(updated);
 		if (propsFile?.id === f.id) propsFile = updated;
 	}
 
@@ -161,7 +195,7 @@
 />
 
 {#if showUpload}
-	<UploadModal onClose={() => (showUpload = false)} />
+	<UploadModal onClose={() => (showUpload = false)} onComplete={refresh} />
 {/if}
 
 {#if propsFile}

@@ -10,5 +10,15 @@ export default defineConfig({
 		Icons({
 			compiler: 'svelte'
 		})
-	]
+	],
+	server: {
+		proxy: {
+			// Proxy API calls to the Rust backend so requests stay same-origin and
+			// the auth_token cookie is set/sent without CORS credential rules.
+			'/api': {
+				target: 'http://localhost:8112',
+				changeOrigin: true
+			}
+		}
+	}
 });

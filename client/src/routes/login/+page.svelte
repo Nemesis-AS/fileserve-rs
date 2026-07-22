@@ -16,7 +16,7 @@
 		error = '';
 		loading = true;
 		try {
-			const { user } = await login(username, password || 'password');
+			const { user } = await login(username, password);
 			authStore.login(user);
 			goto(resolve('/files/my'));
 		} catch (err) {

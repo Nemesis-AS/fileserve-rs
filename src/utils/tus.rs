@@ -57,7 +57,11 @@ pub fn ensure_upload_file(path: &Path, file_size: Option<i64>) -> std::io::Resul
 
 pub struct UploadMetadataFields {
     pub file_name: String,
-    pub checksum: String,
+    /// Optional: the server always computes its own Blake2b512 digest, and this
+    /// is only used to cross-check it. Browser clients omit it — WebCrypto has
+    /// no Blake2b, and shipping one to hash multi-gigabyte files is not worth
+    /// the redundant check.
+    pub checksum: Option<String>,
     pub mime_type: String,
     pub file_dir: String,
 }
@@ -71,10 +75,7 @@ impl TryFrom<HashMap<String, Option<String>>> for UploadMetadataFields {
             .flatten()
             .ok_or("Missing required metadata: file_name")?;
 
-        let checksum = value
-            .remove("checksum")
-            .flatten()
-            .ok_or("Missing required metadata: checksum")?;
+        let checksum = value.remove("checksum").flatten();
 
         let mime_type = value
             .remove("mime_type")

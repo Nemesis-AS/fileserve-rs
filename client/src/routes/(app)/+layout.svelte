@@ -25,7 +25,12 @@
 	let allUsers = $state<User[]>([]);
 
 	onMount(async () => {
-		[allFiles, allUsers] = await Promise.all([getFiles(), getUsers()]);
+		// These only feed sidebar counts, so a failure degrades to "no badge"
+		// rather than taking down the shell around a page that may still work.
+		[allFiles, allUsers] = await Promise.all([
+			getFiles().catch(() => []),
+			getUsers().catch(() => [])
+		]);
 	});
 
 	const counts = $derived({

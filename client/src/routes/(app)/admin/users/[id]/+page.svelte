@@ -34,10 +34,10 @@
 		if (user) {
 			name = user.name;
 			username = user.username;
-			email = user.email;
+			email = user.email ?? '';
 			role = user.role;
-			status = user.status;
-			quotaGB = user.quotaGB;
+			status = user.status ?? 'active';
+			quotaGB = user.quotaGB ?? 0;
 		}
 	});
 
@@ -119,7 +119,7 @@
 						<Input type="number" min={1} max={2000} bind:value={quotaGB} class="w-[110px]" />
 						<span class="text-ink-muted">GB</span>
 						<span class="ml-auto text-[12px] text-ink-muted">
-							Currently using {user.usedGB.toFixed(1)} GB
+							Currently using {(user.usedGB ?? 0).toFixed(1)} GB
 						</span>
 					</div>
 				</Field>

@@ -22,9 +22,10 @@ use crate::{
     config::AppConfig,
     extractors::{AuthUser, ShareClaims, verify_share_token},
     middlewares::tus_resumable,
-    models::FileRecord,
+    models::{FILE_COLUMNS, FileRecord},
     routes::api::types::{
-        ApiResponse, DownloadQuery, FileSearchQuery, ShareRequestBody, ShareResponse,
+        ApiResponse, DownloadQuery, FileSearchQuery, RenameRequestBody, ShareRequestBody,
+        ShareResponse,
     },
     utils::tus::{
         ChecksumCache, UploadMetadataFields, checksum_hex, decode_metadata, ensure_upload_file,
@@ -119,7 +120,7 @@ async fn create_upload(
     .bind(&metadata.file_dir)
     .bind(content_length)
     .bind(&metadata.file_name)
-    .bind(&metadata.checksum)
+    .bind(metadata.checksum.as_deref().unwrap_or(""))
     .bind(&metadata.mime_type)
     .bind(&user.username)
     .bind(expires_at)
@@ -406,7 +407,7 @@ async fn upload_chunk(
 
             let client_checksum: Option<String> = upload.try_get("checksum").ok();
             if let Some(client_checksum) = &client_checksum {
-                if client_checksum != &computed_checksum {
+                if !client_checksum.is_empty() && client_checksum != &computed_checksum {
                     eprintln!(
                         "WARN: checksum mismatch for upload {file_id}: client reported {client_checksum}, computed {computed_checksum}"
                     );
@@ -505,9 +506,9 @@ async fn download_file(
 ) -> impl Responder {
     let file_id = file_id.into_inner();
 
-    let file = match sqlx::query_as::<_, FileRecord>(
-        "SELECT id, file_name, mime_type, file_size, checksum, owner_uname FROM files WHERE id = ? AND deleted_at IS NULL",
-    )
+    let file = match sqlx::query_as::<_, FileRecord>(&format!(
+        "SELECT {FILE_COLUMNS} FROM files WHERE id = ? AND deleted_at IS NULL",
+    ))
     .bind(&file_id)
     .fetch_optional(pool.get_ref())
     .await
@@ -613,9 +614,9 @@ async fn list_user_files(user: Option<AuthUser>, pool: web::Data<Pool<Sqlite>>) 
 
     let user = user.unwrap();
 
-    let files_res = sqlx::query_as::<_, FileRecord>(
-        "SELECT id, file_name, mime_type, file_size, checksum, owner_uname FROM files WHERE owner_uname = ? AND deleted_at IS NULL LIMIT 50",
-    )
+    let files_res = sqlx::query_as::<_, FileRecord>(&format!(
+        "SELECT {FILE_COLUMNS} FROM files WHERE owner_uname = ? ORDER BY created_at DESC, file_name LIMIT 200",
+    ))
     .bind(user.username)
     .fetch_all(pool.as_ref())
     .await;
@@ -644,9 +645,10 @@ async fn search_user_files(
     let query = query.into_inner();
     let pattern = format!("%{}%", query.filename);
 
-    let files_res = sqlx::query_as::<_, FileRecord>(
-        "SELECT id, file_name, mime_type, file_size, checksum, owner_uname FROM files WHERE owner_uname = ? AND deleted_at IS NULL AND (file_name LIKE '%?%' OR file_path LIKE '%?%') LIMIT 50",
-    )
+    let files_res = sqlx::query_as::<_, FileRecord>(&format!(
+        "SELECT {FILE_COLUMNS} FROM files WHERE owner_uname = ? AND deleted_at IS NULL \
+         AND (file_name LIKE ? OR file_dir LIKE ?) LIMIT 50",
+    ))
     .bind(user.username)
     .bind(&pattern)
     .bind(&pattern)
@@ -661,6 +663,126 @@ async fn search_user_files(
         "files fetched successfully",
         files_res.unwrap(),
     ))
+}
+
+const NOW_ISO: &str = "strftime('%Y-%m-%dT%H:%M:%SZ', 'now')";
+
+fn respond_with_file(result: Result<Option<FileRecord>, sqlx::Error>, message: &str) -> HttpResponse {
+    match result {
+        Ok(Some(file)) => HttpResponse::Ok().json(ApiResponse::ok(message, file)),
+        Ok(None) => HttpResponse::NotFound().json(ApiResponse::error("File not found")),
+        Err(e) => HttpResponse::InternalServerError().json(ApiResponse::error(&e.to_string())),
+    }
+}
+
+async fn rename_file(
+    file_id: web::Path<String>,
+    body: web::Json<RenameRequestBody>,
+    user: AuthUser,
+    pool: web::Data<Pool<Sqlite>>,
+) -> impl Responder {
+    let file_id = file_id.into_inner();
+    let name = body.name.trim();
+
+    if name.is_empty() {
+        return HttpResponse::BadRequest().json(ApiResponse::error("File name cannot be empty"));
+    }
+
+    if name.contains(['/', '\\']) || name == "." || name == ".." {
+        return HttpResponse::BadRequest().json(ApiResponse::error("Invalid file name"));
+    }
+
+    let result = sqlx::query_as::<_, FileRecord>(&format!(
+        "UPDATE files SET file_name = ? WHERE id = ? AND owner_uname = ? AND deleted_at IS NULL \
+         RETURNING {FILE_COLUMNS}",
+    ))
+    .bind(name)
+    .bind(&file_id)
+    .bind(&user.username)
+    .fetch_optional(pool.get_ref())
+    .await;
+
+    respond_with_file(result, "File renamed")
+}
+
+async fn trash_file(
+    file_id: web::Path<String>,
+    user: AuthUser,
+    pool: web::Data<Pool<Sqlite>>,
+) -> impl Responder {
+    let file_id = file_id.into_inner();
+
+    let result = sqlx::query_as::<_, FileRecord>(&format!(
+        "UPDATE files SET deleted_at = {NOW_ISO} \
+         WHERE id = ? AND owner_uname = ? AND deleted_at IS NULL RETURNING {FILE_COLUMNS}",
+    ))
+    .bind(&file_id)
+    .bind(&user.username)
+    .fetch_optional(pool.get_ref())
+    .await;
+
+    respond_with_file(result, "File moved to trash")
+}
+
+async fn restore_file(
+    file_id: web::Path<String>,
+    user: AuthUser,
+    pool: web::Data<Pool<Sqlite>>,
+) -> impl Responder {
+    let file_id = file_id.into_inner();
+
+    let result = sqlx::query_as::<_, FileRecord>(&format!(
+        "UPDATE files SET deleted_at = NULL \
+         WHERE id = ? AND owner_uname = ? AND deleted_at IS NOT NULL RETURNING {FILE_COLUMNS}",
+    ))
+    .bind(&file_id)
+    .bind(&user.username)
+    .fetch_optional(pool.get_ref())
+    .await;
+
+    respond_with_file(result, "File restored")
+}
+
+async fn delete_file(
+    file_id: web::Path<String>,
+    user: AuthUser,
+    pool: web::Data<Pool<Sqlite>>,
+    config: web::Data<AppConfig>,
+) -> impl Responder {
+    let file_id = file_id.into_inner();
+
+    let deleted: Option<String> = match sqlx::query_scalar(
+        "DELETE FROM files WHERE id = ? AND owner_uname = ? RETURNING checksum",
+    )
+    .bind(&file_id)
+    .bind(&user.username)
+    .fetch_optional(pool.get_ref())
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            return HttpResponse::InternalServerError().json(ApiResponse::error(&e.to_string()));
+        }
+    };
+
+    let Some(checksum) = deleted else {
+        return HttpResponse::NotFound().json(ApiResponse::error("File not found"));
+    };
+
+    let remaining: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM files WHERE checksum = ?")
+        .bind(&checksum)
+        .fetch_one(pool.get_ref())
+        .await
+        .unwrap_or(1);
+
+    if remaining == 0 {
+        let path = final_file_path(&config, &checksum);
+        if let Ok(Err(e)) = web::block(move || fs::remove_file(&path)).await {
+            eprintln!("WARN: failed to remove blob for {file_id}: {e}");
+        }
+    }
+
+    HttpResponse::Ok().json(ApiResponse::ok_msg("File deleted permanently"))
 }
 
 pub fn register(config: &mut ServiceConfig, app_config: &AppConfig) {
@@ -678,8 +800,12 @@ pub fn register(config: &mut ServiceConfig, app_config: &AppConfig) {
     );
 
     config
+        .route("/my", web::get().to(list_user_files))
+        .route("/search", web::get().to(search_user_files))
         .route("/{id}/download", web::get().to(download_file))
         .route("/{id}/share", web::post().to(create_share_link))
-        .route("/my", web::get().to(list_user_files))
-        .route("/search", web::get().to(search_user_files));
+        .route("/{id}/trash", web::post().to(trash_file))
+        .route("/{id}/restore", web::post().to(restore_file))
+        .route("/{id}", web::patch().to(rename_file))
+        .route("/{id}", web::delete().to(delete_file));
 }

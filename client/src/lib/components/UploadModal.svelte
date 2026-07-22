@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Icon from './Icon.svelte';
 	import { extOf, fileColor, fmtSize } from '$lib/utils/file';
+	import { uploadFile } from '$lib/services/files';
 	import { Modal } from './ui/modal/index.js';
 	import { Button } from './ui/button/index.js';
 	import { IconButton } from './ui/icon-button/index.js';
@@ -19,66 +20,57 @@
 		color: string;
 		progress: number;
 		state: 'uploading' | 'done' | 'error';
+		error?: string;
 	}
 
 	let drag = $state(false);
 	let queue = $state<UploadItem[]>([]);
 	let makePublic = $state(false);
 	let inputEl: HTMLInputElement | undefined = $state();
-	const timers = new Map<string, ReturnType<typeof setInterval>>();
+	/** Lets `removeItem` cancel an in-flight upload rather than orphan it. */
+	const aborters = new Map<string, AbortController>();
 
 	function addFiles(fileList: FileList) {
-		const items: UploadItem[] = Array.from(fileList).map((f, i) => ({
-			id: 'q' + Date.now() + '-' + i,
-			name: f.name,
-			size: f.size,
-			ext: extOf(f.name),
-			color: fileColor(f.name),
-			progress: 0,
-			state: 'uploading' as const
-		}));
-		queue = [...queue, ...items];
-		items.forEach((it) => simulateUpload(it.id));
+		Array.from(fileList).forEach((f, i) => {
+			const item: UploadItem = {
+				id: 'q' + Date.now() + '-' + i,
+				name: f.name,
+				size: f.size,
+				ext: extOf(f.name),
+				color: fileColor(f.name),
+				progress: 0,
+				state: 'uploading'
+			};
+			queue = [...queue, item];
+			startUpload(item.id, f);
+		});
 	}
 
-	function simulateUpload(id: string) {
-		const speed = 8 + Math.random() * 14;
-		timers.set(
-			id,
-			setInterval(() => {
-				queue = queue.map((it) => {
-					if (it.id !== id || it.state !== 'uploading') return it;
-					const next = Math.min(100, it.progress + speed);
-					if (next >= 100) {
-						clearInterval(timers.get(id)!);
-						timers.delete(id);
-						return { ...it, progress: 100, state: Math.random() < 0.07 ? 'error' : 'done' };
-					}
-					return { ...it, progress: next };
-				});
-			}, 220)
-		);
+	function patchItem(id: string, patch: Partial<UploadItem>) {
+		queue = queue.map((it) => (it.id === id ? { ...it, ...patch } : it));
 	}
 
-	// Prefill with demo items
-	$effect(() => {
-		const demo = [
-			{ name: 'thursday-notes.md', size: 14_220 },
-			{ name: 'IMG_4128.jpeg', size: 2_982_001 }
-		];
-		const items: UploadItem[] = demo.map((f, i) => ({
-			id: 'qd-' + i,
-			name: f.name,
-			size: f.size,
-			ext: extOf(f.name),
-			color: fileColor(f.name),
-			progress: i === 0 ? 100 : 38,
-			state: i === 0 ? 'done' : 'uploading'
-		}));
-		queue = items;
-		simulateUpload('qd-1');
-		return () => timers.forEach(clearInterval);
-	});
+	async function startUpload(id: string, file: File) {
+		const aborter = new AbortController();
+		aborters.set(id, aborter);
+		try {
+			await uploadFile(
+				file,
+				makePublic,
+				(pct) => patchItem(id, { progress: pct }),
+				aborter.signal
+			);
+			patchItem(id, { progress: 100, state: 'done' });
+		} catch (e) {
+			// A cancel removed the row already — nothing left to mark as failed.
+			if (aborter.signal.aborted) return;
+			patchItem(id, { state: 'error', error: e instanceof Error ? e.message : 'Upload failed' });
+		} finally {
+			aborters.delete(id);
+		}
+	}
+
+	$effect(() => () => aborters.forEach((a) => a.abort()));
 
 	function onDrop(e: DragEvent) {
 		e.preventDefault();
@@ -93,11 +85,8 @@
 	}
 
 	function removeItem(id: string) {
-		const t = timers.get(id);
-		if (t) {
-			clearInterval(t);
-			timers.delete(id);
-		}
+		aborters.get(id)?.abort();
+		aborters.delete(id);
 		queue = queue.filter((it) => it.id !== id);
 	}
 
@@ -176,7 +165,7 @@
 							{:else if it.state === 'done'}
 								Uploaded · {fmtSize(it.size)}
 							{:else}
-								Upload failed — retry?
+								{it.error ?? 'Upload failed'}
 							{/if}
 						</span>
 					</div>

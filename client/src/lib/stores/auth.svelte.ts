@@ -1,5 +1,6 @@
 import { browser } from '$app/environment';
 import type { User } from '$lib/types';
+import { logout as logoutRequest } from '$lib/services/auth';
 
 const SESSION_KEY = 'filer-session';
 
@@ -27,8 +28,14 @@ export const authStore = {
 		if (browser) sessionStorage.setItem(SESSION_KEY, JSON.stringify(_user));
 	},
 
+	/**
+	 * Clears local session state and asks the server to drop the auth cookie.
+	 * Local state is cleared first and unconditionally, so callers can navigate
+	 * away immediately without waiting on the request.
+	 */
 	logout() {
 		_user = null;
 		if (browser) sessionStorage.removeItem(SESSION_KEY);
+		void logoutRequest();
 	}
 };

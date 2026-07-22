@@ -9,7 +9,7 @@
 	import { authStore } from '$lib/stores/auth.svelte';
 	import { prefs } from '$lib/stores/prefs.svelte';
 	import { toastStore } from '$lib/stores/toast.svelte';
-	import { getFiles, toggleShare } from '$lib/services/files';
+	import { getFiles, toggleShare, downloadFile } from '$lib/services/files';
 	import { TEXT_PREVIEWS } from '$lib/mock/data';
 	import type { FilerFile } from '$lib/types';
 	import { fmtSize, fmtDate } from '$lib/utils/file';
@@ -23,16 +23,20 @@
 	let propsFile = $state<FilerFile | null>(null);
 
 	onMount(async () => {
-		const files = await getFiles();
-		file = files.find((f) => f.id === fileId) ?? null;
+		try {
+			const files = await getFiles();
+			file = files.find((f) => f.id === fileId) ?? null;
+		} catch (e) {
+			toastStore.show(e instanceof Error ? e.message : 'Could not load file');
+		}
 	});
 
 	function handleDownload() {
-		if (file) toastStore.show(`Downloading "${file.name}"`);
+		if (file) downloadFile(file);
 	}
 
 	async function handleToggleShare(f: FilerFile, makePublic: boolean) {
-		const updated = await toggleShare(f.id, makePublic);
+		const updated = await toggleShare(f, makePublic);
 		file = updated;
 		if (propsFile) propsFile = updated;
 	}

@@ -17,14 +17,6 @@ impl<T: Serialize> ApiResponse<T> {
         }
     }
 
-    pub fn ok_msg(data: T) -> Self {
-        Self {
-            success: false,
-            message: None,
-            data: Some(data),
-        }
-    }
-
     // pub fn error_data(message: &str, data: T) -> Self {
     //     Self {
     //         success: false,
@@ -35,6 +27,15 @@ impl<T: Serialize> ApiResponse<T> {
 }
 
 impl ApiResponse<()> {
+    /// Success with a message but no payload.
+    pub fn ok_msg(message: &str) -> Self {
+        Self {
+            success: true,
+            message: Some(message.into()),
+            data: None,
+        }
+    }
+
     pub fn error(message: &str) -> Self {
         Self {
             success: false,
@@ -63,4 +64,9 @@ pub struct ShareResponse {
 #[derive(Deserialize)]
 pub struct FileSearchQuery {
     pub filename: String,
+}
+
+#[derive(Deserialize)]
+pub struct RenameRequestBody {
+    pub name: String,
 }

@@ -22,13 +22,16 @@ export interface User {
 	id: string;
 	name: string;
 	username: string;
-	email: string;
 	role: UserRole;
-	status: UserStatus;
-	quotaGB: number;
-	usedGB: number;
-	lastSeen: string;
-	files: number;
+	avatar?: string | null;
+	// Not yet backed by the users table — only present on mock data until the
+	// admin routes are wired to a schema that stores them.
+	email?: string;
+	status?: UserStatus;
+	quotaGB?: number;
+	usedGB?: number;
+	lastSeen?: string;
+	files?: number;
 }
 
 export type AuditEventType =

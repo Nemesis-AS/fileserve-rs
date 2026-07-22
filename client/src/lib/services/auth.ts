@@ -1,33 +1,60 @@
 import type { User } from '$lib/types';
-import { MOCK_USERS } from '$lib/mock/data';
+
+const API = '/api/v1';
+
+/** Envelope every backend endpoint wraps its payload in. */
+interface ApiEnvelope<T> {
+	success: boolean;
+	message: string | null;
+	data: T | null;
+}
 
 export interface LoginResult {
 	user: User;
 	token: string;
 }
 
-export async function login(username: string, _password: string): Promise<LoginResult> {
+/**
+ * Reads the backend envelope and surfaces `message` as the thrown error, so the
+ * UI shows the server's reason ("Incorrect username or password") rather than a
+ * generic failure. Unlike the other services, this one has no mock fallback —
+ * a failed request here means auth genuinely failed.
+ */
+async function unwrap<T>(res: Response, fallbackMsg: string): Promise<T> {
+	let body: ApiEnvelope<T> | null = null;
 	try {
-		const res = await fetch('/api/auth/login', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ username, password: _password })
-		});
-		if (!res.ok) throw new Error('Invalid credentials');
-		return res.json() as Promise<LoginResult>;
+		body = (await res.json()) as ApiEnvelope<T>;
 	} catch {
-		// Mock: find user by username (any password accepted in dev)
-		const user = MOCK_USERS.find((u) => u.username === username);
-		if (!user) throw new Error('User not found');
-		if (user.status === 'suspended') throw new Error('Account suspended');
-		return { user: { ...user }, token: 'mock-token-' + user.id };
+		// Non-JSON response (proxy error, server down) — fall through.
 	}
+
+	if (!res.ok || !body?.success) {
+		throw new Error(body?.message ?? fallbackMsg);
+	}
+	if (body.data === null || body.data === undefined) {
+		throw new Error(fallbackMsg);
+	}
+	return body.data;
 }
 
+export async function login(username: string, password: string): Promise<LoginResult> {
+	const res = await fetch(`${API}/auth/login`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		credentials: 'include',
+		body: JSON.stringify({ username, password })
+	});
+	return unwrap<LoginResult>(res, 'Sign in failed');
+}
+
+/**
+ * Clears the server session cookie. Never throws: the caller always clears local
+ * state, so a failure here must not strand the user in a signed-in UI.
+ */
 export async function logout(): Promise<void> {
 	try {
-		await fetch('/api/auth/logout', { method: 'POST' });
+		await fetch(`${API}/auth/logout`, { method: 'POST', credentials: 'include' });
 	} catch {
-		// Mock: no-op
+		// Network failure — local session is cleared by the caller regardless.
 	}
 }

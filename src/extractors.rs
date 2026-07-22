@@ -8,6 +8,7 @@ use crate::{config::AppConfig, routes::api::types::ApiResponse};
 #[derive(Debug, Serialize, Deserialize)]
 pub struct JwtClaims {
     pub username: String,
+    pub exp: usize,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
