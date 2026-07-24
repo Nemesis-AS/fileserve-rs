@@ -53,12 +53,7 @@
 		const aborter = new AbortController();
 		aborters.set(id, aborter);
 		try {
-			await uploadFile(
-				file,
-				makePublic,
-				(pct) => patchItem(id, { progress: pct }),
-				aborter.signal
-			);
+			await uploadFile(file, makePublic, (pct) => patchItem(id, { progress: pct }), aborter.signal);
 			patchItem(id, { progress: 100, state: 'done' });
 		} catch (e) {
 			if (aborter.signal.aborted) return;
@@ -114,12 +109,12 @@
 		<input bind:this={inputEl} type="file" multiple class="hidden" onchange={onPick} />
 	</Dropzone>
 
-	<Checkbox bind:checked={makePublic} class="mt-[14px]">
+	<Checkbox bind:checked={makePublic} class="mt-3.5">
 		Make these files public (shareable link)
 	</Checkbox>
 
 	{#if queue.length > 0}
-		<div class="mt-[18px] mb-1 flex items-baseline justify-between text-[12px] text-ink-muted">
+		<div class="mt-4.5 mb-1 flex items-baseline justify-between text-[12px] text-ink-muted">
 			<span class="font-medium text-ink">
 				Queue · {queue.length}
 				{queue.length === 1 ? 'file' : 'files'}
@@ -133,13 +128,13 @@
 					class="grid grid-cols-[22px_1fr_auto_auto] items-center gap-2.5 px-1 py-2 text-[12.5px]"
 				>
 					<div
-						class="grid size-[22px] shrink-0 place-items-center rounded-[5px] font-code text-[9px] font-bold text-white"
+						class="grid size-5.5 shrink-0 place-items-center rounded-[5px] font-code text-[9px] font-bold text-white"
 						style="background: {it.color};"
 					>
 						{it.ext.slice(0, 4).toUpperCase()}
 					</div>
 
-					<div class="flex min-w-0 flex-col gap-[3px]">
+					<div class="flex min-w-0 flex-col gap-0.75">
 						<b class="overflow-hidden font-[450] text-ellipsis whitespace-nowrap">{it.name}</b>
 						<Meter
 							value={it.progress}

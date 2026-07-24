@@ -62,6 +62,7 @@
 		if (currentPath.startsWith('/admin/users') && currentPath !== '/admin/users') return 'admin-edit';
 		if (currentPath === '/admin/users') return 'admin';
 		if (currentPath === '/admin/audit') return 'audit';
+		if (currentPath === '/admin/config') return 'config';
 		if (currentPath === '/settings') return 'settings';
 		if (currentPath.match(/^\/files\/[^/]+\/[^/]+/)) return 'viewer';
 		return 'files';
@@ -78,6 +79,7 @@
 	const pageTitle = $derived.by(() => {
 		if (screen === 'admin' || screen === 'admin-edit') return 'Users';
 		if (screen === 'audit') return 'Audit log';
+		if (screen === 'config') return 'Configuration';
 		if (screen === 'settings') return 'Settings';
 		if (section === 'public') return 'Public';
 		if (section === 'trash') return 'Trash';
@@ -91,6 +93,7 @@
 	function handleNav(n: string) {
 		if (n === 'admin') goto('/admin/users');
 		else if (n === 'audit') goto('/admin/audit');
+		else if (n === 'config') goto('/admin/config');
 	}
 </script>
 

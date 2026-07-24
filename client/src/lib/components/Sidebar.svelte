@@ -29,11 +29,11 @@
 	);
 </script>
 
-<aside class="flex min-h-0 w-[232px] flex-col overflow-hidden border-r border-edge bg-elevated">
-	<div class="flex shrink-0 items-center gap-[9px] px-4 pt-[14px] pb-3">
+<aside class="flex min-h-0 w-58 flex-col overflow-hidden border-r border-edge bg-elevated">
+	<div class="flex shrink-0 items-center gap-2.25 px-4 pt-3.5 pb-3">
 		<Logo size={22} />
 		<span class="text-[15px] font-bold tracking-[-0.035em] text-ink">
-			fileserve<span class="mx-[1.5px] inline-block size-[4px] rounded-full bg-accent align-baseline"
+			fileserve<span class="mx-[1.5px] inline-block size-1 rounded-full bg-accent align-baseline"
 			></span><span class="font-mono text-[13px] font-semibold text-accent-ink">rs</span>
 		</span>
 	</div>
@@ -68,7 +68,7 @@
 
 		{#if isAdmin}
 			<div
-				class="px-2.5 pt-[14px] pb-1.5 text-[10.5px] font-semibold tracking-[0.06em] whitespace-nowrap text-ink-faint uppercase"
+				class="px-2.5 pt-3.5 pb-1.5 text-[10.5px] font-semibold tracking-[0.06em] whitespace-nowrap text-ink-faint uppercase"
 			>
 				Admin
 			</div>
@@ -86,11 +86,16 @@
 				{#snippet icon()}<Icon name="Info" size={16} />{/snippet}
 				Audit log
 			</NavItem>
+
+			<NavItem active={screen === 'config'} onclick={() => onNav('config')}>
+				{#snippet icon()}<Icon name="Settings" size={16} />{/snippet}
+				Configuration
+			</NavItem>
 		{/if}
 	</nav>
 
 	<div
-		class="flex shrink-0 flex-col gap-1.5 border-t border-edge px-4 pt-[14px] pb-4 text-[12px] text-ink-muted"
+		class="flex shrink-0 flex-col gap-1.5 border-t border-edge px-4 pt-3.5 pb-4 text-[12px] text-ink-muted"
 	>
 		<div class="flex justify-between">
 			<span>Storage</span>

@@ -22,7 +22,7 @@ use crate::{
     config::AppConfig,
     extractors::{AuthUser, ShareClaims, verify_share_token},
     middlewares::tus_resumable,
-    models::{FILE_COLUMNS, FileRecord},
+    models::{FILE_COLUMNS, FileRecord, Settings},
     routes::api::types::{
         ApiResponse, DownloadQuery, FileSearchQuery, RenameRequestBody, ShareRequestBody,
         ShareResponse, VisibilityRequestBody,
@@ -46,7 +46,7 @@ async fn create_upload(
     req: HttpRequest,
     user: AuthUser,
     pool: web::Data<Pool<Sqlite>>,
-    config: web::Data<AppConfig>,
+    settings: web::Data<Settings>,
 ) -> impl Responder {
     let upload_length_header = req
         .headers()
@@ -87,9 +87,9 @@ async fn create_upload(
                 .json(ApiResponse::error("Upload-Length cannot be negative"));
         }
 
-        if length > config.tus_max_size as i64 {
+        if length > settings.tus_max_size() {
             return HttpResponse::PayloadTooLarge()
-                .append_header(("Tus-Max-Size", config.tus_max_size.to_string()))
+                .append_header(("Tus-Max-Size", settings.tus_max_size().to_string()))
                 .json(ApiResponse::error("Upload-Length exceeds Tus-Max-Size"));
         }
 
@@ -166,7 +166,7 @@ async fn create_upload(
     }
 
     if let Some(size) = content_length {
-        let path = upload_file_path(&config, &uid);
+        let path = upload_file_path(&settings.storage_path(), &uid);
 
         let create_result = web::block(move || -> std::io::Result<()> {
             if let Some(parent) = path.parent() {
@@ -254,7 +254,7 @@ async fn upload_chunk(
     content_length: web::Header<ContentLength>,
     file_id_param: web::Path<String>,
     pool: web::Data<Pool<Sqlite>>,
-    config: web::Data<AppConfig>,
+    settings: web::Data<Settings>,
     checksum_cache: web::Data<ChecksumCache>,
 ) -> impl Responder {
     let file_id = file_id_param.into_inner();
@@ -331,9 +331,9 @@ async fn upload_chunk(
                     .json(ApiResponse::error("Upload-Length cannot be negative"));
             }
 
-            if declared_size > config.tus_max_size as i64 {
+            if declared_size > settings.tus_max_size() {
                 return HttpResponse::PayloadTooLarge()
-                    .append_header(("Tus-Max-Size", config.tus_max_size.to_string()))
+                    .append_header(("Tus-Max-Size", settings.tus_max_size().to_string()))
                     .json(ApiResponse::error("Upload-Length exceeds Tus-Max-Size"));
             }
 
@@ -384,7 +384,7 @@ async fn upload_chunk(
     }
 
     let new_offset = upload_offset + len;
-    let upload_path = upload_file_path(&config, &file_id);
+    let upload_path = upload_file_path(&settings.storage_path(), &file_id);
 
     let cached_hasher = checksum_cache.lock().unwrap().get(&file_id).cloned();
 
@@ -448,8 +448,9 @@ async fn upload_chunk(
                 }
             }
 
-            let upload_path = upload_file_path(&config, &file_id);
-            let final_path = final_file_path(&config, &computed_checksum);
+            let storage_path = settings.storage_path();
+            let upload_path = upload_file_path(&storage_path, &file_id);
+            let final_path = final_file_path(&storage_path, &computed_checksum);
 
             let move_result = web::block(move || -> std::io::Result<()> {
                 if final_path.exists() {
@@ -537,6 +538,7 @@ async fn download_file(
     user: Option<AuthUser>,
     pool: web::Data<Pool<Sqlite>>,
     config: web::Data<AppConfig>,
+    settings: web::Data<Settings>,
 ) -> impl Responder {
     let file_id = file_id.into_inner();
 
@@ -569,7 +571,7 @@ async fn download_file(
         return HttpResponse::NotFound().json(ApiResponse::error("File not found"));
     }
 
-    let path = final_file_path(&config, &file.checksum);
+    let path = final_file_path(&settings.storage_path(), &file.checksum);
 
     let named_file = match NamedFile::open(&path) {
         Ok(named_file) => named_file,
@@ -846,7 +848,7 @@ async fn delete_file(
     file_id: web::Path<String>,
     user: AuthUser,
     pool: web::Data<Pool<Sqlite>>,
-    config: web::Data<AppConfig>,
+    settings: web::Data<Settings>,
 ) -> impl Responder {
     let file_id = file_id.into_inner();
 
@@ -875,7 +877,7 @@ async fn delete_file(
         .unwrap_or(1);
 
     if remaining == 0 {
-        let path = final_file_path(&config, &checksum);
+        let path = final_file_path(&settings.storage_path(), &checksum);
         if let Ok(Err(e)) = web::block(move || fs::remove_file(&path)).await {
             eprintln!("WARN: failed to remove blob for {file_id}: {e}");
         }
@@ -887,7 +889,7 @@ async fn delete_file(
 pub fn register(config: &mut ServiceConfig, app_config: &AppConfig) {
     config.service(
         web::scope("/upload")
-            .app_data(web::PayloadConfig::new(app_config.tus_max_size as usize))
+            .app_data(web::PayloadConfig::new(app_config.max_payload_bytes))
             .wrap(from_fn(tus_resumable))
             .route(
                 "",

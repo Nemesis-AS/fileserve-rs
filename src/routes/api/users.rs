@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, Pool, Sqlite};
 use uuid::Uuid;
 
-use crate::config::AppConfig;
 use crate::extractors::AuthUser;
+use crate::models::Settings;
 use crate::routes::api::types::ApiResponse;
 
 const MIN_PASSWORD_LEN: usize = 8;
@@ -101,7 +101,7 @@ fn quota_gb_to_bytes(gb: Option<f64>) -> Option<i64> {
 
 /// Resolves the caller's role and rejects non-admins. Returns the offending
 /// `HttpResponse` in the `Err` arm so handlers can early-return it directly.
-async fn require_admin(pool: &Pool<Sqlite>, username: &str) -> Result<(), HttpResponse> {
+pub(crate) async fn require_admin(pool: &Pool<Sqlite>, username: &str) -> Result<(), HttpResponse> {
     let role: Option<String> = match sqlx::query_scalar("SELECT role FROM users WHERE username = ?")
         .bind(username)
         .fetch_optional(pool)
@@ -327,7 +327,7 @@ async fn create_user(
     auth: AuthUser,
     body: web::Json<CreateUserBody>,
     pool: web::Data<Pool<Sqlite>>,
-    config: web::Data<AppConfig>,
+    settings: web::Data<Settings>,
 ) -> impl Responder {
     if let Err(resp) = require_admin(pool.get_ref(), &auth.username).await {
         return resp;
@@ -358,7 +358,7 @@ async fn create_user(
             return HttpResponse::BadRequest().json(ApiResponse::error("Quota cannot be negative"));
         }
         Some(b) => b,
-        None => config.default_quota_bytes,
+        None => settings.default_quota_bytes(),
     };
 
     // Use the supplied password, or mint a temporary one when it's blank.

@@ -1,39 +1,5 @@
 import type { User } from '$lib/types';
-import { handleUnauthorized } from './session';
-
-const API = '/api/v1';
-
-/** Envelope every backend endpoint wraps its payload in. */
-interface ApiEnvelope<T> {
-	success: boolean;
-	message: string | null;
-	data: T | null;
-}
-
-/**
- * Calls a `/api/v1` endpoint and unwraps the `{ success, message, data }`
- * envelope, surfacing the server's `message` as the thrown error. Unlike the
- * file services there is no mock fallback: these are admin-only mutations, so a
- * failure (not signed in, not an admin, server down) must be visible rather
- * than silently masked by seed data.
- */
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-	const res = await fetch(`${API}${path}`, { credentials: 'include', ...init });
-
-	if (res.status === 401) handleUnauthorized();
-
-	let body: ApiEnvelope<T> | null = null;
-	try {
-		body = (await res.json()) as ApiEnvelope<T>;
-	} catch {
-		// Non-JSON response (proxy error, server down) — fall through.
-	}
-
-	if (!res.ok || !body?.success) {
-		throw new Error(body?.message ?? `Request failed (${res.status})`);
-	}
-	return body.data as T;
-}
+import { apiFetch } from './api';
 
 export async function getUsers(): Promise<User[]> {
 	return apiFetch<User[]>('/users');

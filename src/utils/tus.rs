@@ -8,16 +8,14 @@ use std::{
     sync::Mutex,
 };
 
-use crate::config::AppConfig;
-
 pub type ChecksumCache = Mutex<HashMap<String, Blake2b512>>;
 
-pub fn upload_file_path(config: &AppConfig, upload_id: &str) -> PathBuf {
-    Path::new(&config.storage_path).join("uploads").join(upload_id)
+pub fn upload_file_path(storage_path: &str, upload_id: &str) -> PathBuf {
+    Path::new(storage_path).join("uploads").join(upload_id)
 }
 
-pub fn final_file_path(config: &AppConfig, file_hash: &str) -> PathBuf {
-    Path::new(&config.storage_path).join("files").join(file_hash)
+pub fn final_file_path(storage_path: &str, file_hash: &str) -> PathBuf {
+    Path::new(storage_path).join("files").join(file_hash)
 }
 
 pub fn checksum_hex(hasher: &Blake2b512) -> String {
