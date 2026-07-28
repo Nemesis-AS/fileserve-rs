@@ -6,7 +6,7 @@
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 	import Logo from '$lib/components/Logo.svelte';
 
-	let username = $state('alex');
+	let username = $state('');
 	let password = $state('');
 	let remember = $state(true);
 	let error = $state('');
@@ -43,7 +43,7 @@
 			<Logo size={40} />
 			<span class="text-[19px] font-bold tracking-[-0.035em] text-ink">
 				fileserve<span
-					class="mx-[2px] inline-block size-[5px] rounded-full bg-accent align-baseline"
+					class="mx-0.5 inline-block size-1.25 rounded-full bg-accent align-baseline"
 				></span><span class="font-mono text-[16px] font-semibold text-accent-ink">rs</span>
 			</span>
 		</div>

@@ -5,12 +5,13 @@
 	import { onMount } from 'svelte';
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import Toast from '$lib/components/Toast.svelte';
+	import UploadDock from '$lib/components/UploadDock.svelte';
 	import { authStore } from '$lib/stores/auth.svelte';
 	import { prefs } from '$lib/stores/prefs.svelte';
 	import { quotaStore } from '$lib/stores/quota.svelte';
-	import { getFiles, getPublicFiles } from '$lib/services/files';
-	import { getUsers, getMe } from '$lib/services/users';
-	import type { FileSection, FilerFile, User } from '$lib/types';
+	import { countsStore } from '$lib/stores/counts.svelte';
+	import { getMe } from '$lib/services/users';
+	import type { FileSection } from '$lib/types';
 
 	let { children } = $props();
 
@@ -22,10 +23,6 @@
 		}
 	});
 
-	let allFiles = $state<FilerFile[]>([]);
-	let publicFiles = $state<FilerFile[]>([]);
-	let allUsers = $state<User[]>([]);
-
 	onMount(async () => {
 		try {
 			authStore.login(await getMe());
@@ -34,34 +31,27 @@
 		} finally {
 			hydrated = true;
 		}
-
-		[allFiles, publicFiles, allUsers] = await Promise.all([
-			getFiles().catch(() => []),
-			getPublicFiles().catch(() => []),
-			getUsers().catch(() => [])
-		]);
 	});
 
-	const counts = $derived({
-		my: allFiles.filter((f) => !f.trashed).length,
-		public: publicFiles.length,
-		trash: allFiles.filter((f) => f.trashed).length,
-		users: allUsers.length
-	});
-
+	// Held off until `hydrated` so the first fetch carries a resolved session
+	// rather than racing `getMe` into a 401 that would bounce us to login.
 	$effect(() => {
 		void $page.url.pathname;
+		if (!hydrated) return;
 		void quotaStore.refresh();
+		void countsStore.refresh();
 	});
+
+	const counts = $derived(countsStore.counts);
 
 	const quota = $derived({ used: quotaStore.quota.usedGB, total: quotaStore.quota.quotaGB });
 
 	const currentPath = $derived($page.url.pathname);
 
 	const screen = $derived.by(() => {
-		if (currentPath.startsWith('/admin/users') && currentPath !== '/admin/users') return 'admin-edit';
+		if (currentPath.startsWith('/admin/users') && currentPath !== '/admin/users')
+			return 'admin-edit';
 		if (currentPath === '/admin/users') return 'admin';
-		if (currentPath === '/admin/audit') return 'audit';
 		if (currentPath === '/admin/config') return 'config';
 		if (currentPath === '/settings') return 'settings';
 		if (currentPath.match(/^\/files\/[^/]+\/[^/]+/)) return 'viewer';
@@ -78,7 +68,6 @@
 
 	const pageTitle = $derived.by(() => {
 		if (screen === 'admin' || screen === 'admin-edit') return 'Users';
-		if (screen === 'audit') return 'Audit log';
 		if (screen === 'config') return 'Configuration';
 		if (screen === 'settings') return 'Settings';
 		if (section === 'public') return 'Public';
@@ -92,7 +81,6 @@
 
 	function handleNav(n: string) {
 		if (n === 'admin') goto('/admin/users');
-		else if (n === 'audit') goto('/admin/audit');
 		else if (n === 'config') goto('/admin/config');
 	}
 </script>
@@ -124,5 +112,6 @@
 		</main>
 	</div>
 
+	<UploadDock />
 	<Toast />
 {/if}

@@ -101,9 +101,12 @@ export async function searchFiles(query: string): Promise<FilerFile[]> {
 
 const TUS_CHUNK_SIZE = 5 * 1024 * 1024;
 
+/**
+ * Uploads land private; sharing is a separate step via {@link toggleShare} or
+ * {@link createShareLink}. The tus endpoint has no visibility flag to set here.
+ */
 export function uploadFile(
 	file: File,
-	_makePublic: boolean,
 	onProgress?: (pct: number) => void,
 	signal?: AbortSignal
 ): Promise<void> {

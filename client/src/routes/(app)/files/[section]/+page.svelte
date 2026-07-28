@@ -12,6 +12,8 @@
 	import { prefs } from '$lib/stores/prefs.svelte';
 	import { toastStore } from '$lib/stores/toast.svelte';
 	import { quotaStore } from '$lib/stores/quota.svelte';
+	import { countsStore } from '$lib/stores/counts.svelte';
+	import { uploadsStore } from '$lib/stores/uploads.svelte';
 	import {
 		getFiles,
 		getPublicFiles,
@@ -44,9 +46,6 @@
 	async function refresh() {
 		try {
 			allFiles = await getFiles();
-			// Usage changed (e.g. an upload just completed) — keep the sidebar bar
-			// in step rather than waiting for the next navigation.
-			void quotaStore.refresh();
 		} catch (e) {
 			toastStore.show(e instanceof Error ? e.message : 'Could not load files');
 		}
@@ -54,17 +53,41 @@
 
 	onMount(refresh);
 
+	/** Trash/restore/delete/share shift both the usage bar and the nav badges. */
+	function syncSidebar() {
+		void quotaStore.refresh();
+		void countsStore.refresh();
+	}
+
+	// Uploads finish in the dock, outside this page's lifetime — pull the new rows in
+	// each time one lands. `seen` is a plain variable, not `$state`, so tracking it
+	// can't re-trigger the effect; seeding it from the current count skips the
+	// mount-time run that `onMount(refresh)` already covers.
+	let seen = uploadsStore.finished;
+	$effect(() => {
+		if (uploadsStore.finished === seen) return;
+		seen = uploadsStore.finished;
+		void refresh();
+		if (sectionParam === 'public') void loadPublic();
+	});
+
+	// Bumped per call so a slower earlier fetch can't overwrite a newer listing.
+	let publicSeq = 0;
+
+	async function loadPublic() {
+		const token = ++publicSeq;
+		try {
+			const rows = await getPublicFiles();
+			if (token === publicSeq) publicFiles = rows;
+		} catch (e) {
+			toastStore.show(e instanceof Error ? e.message : 'Could not load public files');
+		}
+	}
+
 	// The Public section is a separate cross-owner fetch; (re)load it on entry so
 	// a file another user just made public shows up without a full reload.
 	$effect(() => {
-		if (sectionParam !== 'public') return;
-		let active = true;
-		getPublicFiles()
-			.then((f) => active && (publicFiles = f))
-			.catch((e) => active && toastStore.show(e instanceof Error ? e.message : 'Could not load public files'));
-		return () => {
-			active = false;
-		};
+		if (sectionParam === 'public') void loadPublic();
 	});
 
 	// Fetch results whenever `?q=` changes; a flag drops stale in-flight lookups.
@@ -95,7 +118,9 @@
 	});
 
 	const TITLES: Record<FileSection, string> = {
-		my: 'My Files', public: 'Public', trash: 'Trash'
+		my: 'My Files',
+		public: 'Public',
+		trash: 'Trash'
 	};
 
 	// ── Actions ──────────────────────────────────────────────
@@ -135,14 +160,14 @@
 				toastStore.show(`Moved "${f.name}" to Trash`, async () => {
 					try {
 						replace(await restoreFile(f.id));
-						void quotaStore.refresh();
+						syncSidebar();
 					} catch (e) {
 						fail(e, 'Could not restore file');
 					}
 				});
 			}
 			// Trashing and permanent deletion both change counted usage.
-			void quotaStore.refresh();
+			syncSidebar();
 		} catch (e) {
 			fail(e, 'Could not delete file');
 		}
@@ -151,7 +176,7 @@
 	async function handleRestore(f: FilerFile) {
 		try {
 			replace(await restoreFile(f.id));
-			void quotaStore.refresh(); // restoring re-counts the file against usage
+			syncSidebar(); // restoring re-counts the file against usage
 			toastStore.show(`Restored "${f.name}"`);
 		} catch (e) {
 			fail(e, 'Could not restore file');
@@ -178,6 +203,7 @@
 					: [updated, ...publicFiles]
 				: publicFiles.filter((x) => x.id !== updated.id);
 			if (propsFile?.id === f.id) propsFile = updated;
+			void countsStore.refresh(); // the Public badge just moved
 		} catch (e) {
 			fail(e, 'Could not update sharing');
 		}
@@ -186,7 +212,8 @@
 	// ── Keyboard shortcuts ───────────────────────────────────
 	function handleKeydown(e: KeyboardEvent) {
 		const tag = (e.target as HTMLElement).tagName?.toLowerCase();
-		const inText = tag === 'input' || tag === 'textarea' || (e.target as HTMLElement).isContentEditable;
+		const inText =
+			tag === 'input' || tag === 'textarea' || (e.target as HTMLElement).isContentEditable;
 
 		if (e.key === '/' && !inText) {
 			e.preventDefault();
@@ -197,15 +224,23 @@
 		if (inText) return;
 
 		// Escape leaves the search results view back to the plain section.
-		if (e.key === 'Escape' && query) { goto(`/files/${sectionParam}`); return; }
+		if (e.key === 'Escape' && query) {
+			goto(`/files/${sectionParam}`);
+			return;
+		}
 
 		if (e.key === 'j' || e.key === 'ArrowDown' || e.key === 'k' || e.key === 'ArrowUp') {
 			const ids = displayFiles.map((f) => f.id);
 			if (!ids.length) return;
 			const idx = ids.indexOf(activeId ?? '');
-			const next = (e.key === 'j' || e.key === 'ArrowDown')
-				? (idx < 0 ? 0 : Math.min(ids.length - 1, idx + 1))
-				: (idx < 0 ? 0 : Math.max(0, idx - 1));
+			const next =
+				e.key === 'j' || e.key === 'ArrowDown'
+					? idx < 0
+						? 0
+						: Math.min(ids.length - 1, idx + 1)
+					: idx < 0
+						? 0
+						: Math.max(0, idx - 1);
 			activeId = ids[next];
 			e.preventDefault();
 		}
@@ -239,7 +274,7 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <TopBar
-	crumbs={['fileserve.rs', query ? `Search: “${query}”` : TITLES[sectionParam] ?? 'Files']}
+	crumbs={['fileserve.rs', query ? `Search: “${query}”` : (TITLES[sectionParam] ?? 'Files')]}
 	searchValue={query ?? ''}
 	onPick={handleView}
 	onSubmit={handleSearchSubmit}
@@ -247,7 +282,10 @@
 	dark={prefs.dark}
 	onToggleDark={() => (prefs.dark = !prefs.dark)}
 	user={authStore.user!}
-	onLogout={() => { authStore.logout(); goto('/login'); }}
+	onLogout={() => {
+		authStore.logout();
+		goto('/login');
+	}}
 	onSettings={() => goto('/settings')}
 	bind:searchRef={searchEl}
 />
@@ -270,7 +308,7 @@
 />
 
 {#if showUpload}
-	<UploadModal onClose={() => (showUpload = false)} onComplete={refresh} />
+	<UploadModal onClose={() => (showUpload = false)} />
 {/if}
 
 {#if propsFile}

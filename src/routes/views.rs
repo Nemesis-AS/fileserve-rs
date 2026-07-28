@@ -1,4 +1,4 @@
-use crate::utils::static_resolver::handle_embedded_file;
+use crate::utils::static_resolver::{get_embedded_file_or, handle_embedded_file};
 use actix_web::{
     HttpResponse, Responder, get,
     web::{Path, ServiceConfig},
@@ -11,7 +11,7 @@ pub async fn index() -> HttpResponse {
 
 #[get("/{_:.*}")]
 pub async fn dist(path: Path<String>) -> impl Responder {
-    handle_embedded_file(path.as_str())
+    get_embedded_file_or(&path, "index.html")
 }
 
 pub fn register(config: &mut ServiceConfig) {

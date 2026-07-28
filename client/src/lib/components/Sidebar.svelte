@@ -82,11 +82,6 @@
 				Users
 			</NavItem>
 
-			<NavItem active={screen === 'audit'} onclick={() => onNav('audit')}>
-				{#snippet icon()}<Icon name="Info" size={16} />{/snippet}
-				Audit log
-			</NavItem>
-
 			<NavItem active={screen === 'config'} onclick={() => onNav('config')}>
 				{#snippet icon()}<Icon name="Settings" size={16} />{/snippet}
 				Configuration
@@ -110,7 +105,9 @@
 		{:else}
 			<Meter value={pct} />
 			<div class="flex justify-between text-[11px]">
-				<span class="text-ink-faint">{Math.max(0, quota.total - quota.used).toFixed(1)} GB free</span>
+				<span class="text-ink-faint"
+					>{Math.max(0, quota.total - quota.used).toFixed(1)} GB free</span
+				>
 				<span class="text-ink-faint">{Math.round(pct)}%</span>
 			</div>
 		{/if}
