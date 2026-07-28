@@ -1,0 +1,94 @@
+name: release
+
+# Publishes the artifacts the in-app self-updater consumes. The asset names and
+# the SHA256SUMS format here are a contract with `src/update/` — changing either
+# will stop existing installs from finding their download.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            ext: '.exe'
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            ext: ''
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches Cargo.toml
+        shell: bash
+        run: |
+          crate="$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2)"
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$crate" != "$tag" ]; then
+            echo "Cargo.toml is $crate but the tag is $tag." >&2
+            echo "A binary whose version disagrees with its release tag would" >&2
+            echo "offer to update to itself forever." >&2
+            exit 1
+          fi
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: client/pnpm-lock.yaml
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Stage the artifact
+        shell: bash
+        run: |
+          mkdir -p dist
+          name="fileserve-rs-${GITHUB_REF_NAME}-${{ matrix.target }}${{ matrix.ext }}"
+          cp "target/${{ matrix.target }}/release/fileserve-rs${{ matrix.ext }}" "dist/$name"
+          cd dist && sha256sum "$name" > "$name.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: dist/*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Build SHA256SUMS
+        working-directory: dist
+        run: |
+          cat *.sha256 > SHA256SUMS
+          rm -f *.sha256
+          sha256sum -c SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --generate-notes \
+            --verify-tag

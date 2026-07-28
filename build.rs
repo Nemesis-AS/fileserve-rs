@@ -4,6 +4,12 @@ use std::process::Command;
 // Help here: https://stackoverflow.com/questions/78242352/why-i-get-program-not-found-error-on-running-npm-v-command-with-rust-command
 
 fn main() {
+    println!(
+        "cargo:rustc-env=BUILD_TARGET={}",
+        env::var("TARGET").expect("TARGET not set by cargo")
+    );
+    println!("cargo:rerun-if-changed=build.rs");
+
     // Embed the app icon into the Windows exe. Done first — before the chdir
     // below — so the icon path stays relative to the crate root, and in every
     // profile so debug builds carry the icon too. No-op when not targeting

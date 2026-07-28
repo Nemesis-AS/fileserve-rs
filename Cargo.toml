@@ -1,6 +1,6 @@
 [package]
 name = "fileserve-rs"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 
 [dependencies]
@@ -16,8 +16,10 @@ jsonwebtoken = { version = "10.4.0", features = ["rust_crypto"] }
 mime = "0.3.17"
 mime_guess = "2.0.5"
 rust-embed = { version = "8.11.0", features = ["actix"] }
+semver = "1.0"
 serde = "1.0.228"
 serde_json = "1.0.149"
+sha2 = "0.10"
 sqlx = { version = "0.8.6", features = [
   "runtime-tokio",
   "sqlite",
@@ -25,6 +27,10 @@ sqlx = { version = "0.8.6", features = [
   "migrate",
   "chrono",
 ] }
+# Blocking HTTP client for the self-updater. rustls with the `ring` provider —
+# the alternative `aws-lc-rs` needs CMake + NASM on windows-msvc, which would
+# make this crate un-buildable on a stock Windows toolchain.
+ureq = { version = "3", default-features = false, features = ["rustls", "json", "gzip"] }
 uuid = {version = "1.23.5", features = ["v4"]}
 
 [build-dependencies]
