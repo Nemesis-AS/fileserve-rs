@@ -1,180 +1,56 @@
-# fileserve
+<p align="center">
+  <img src="images/banner.svg" alt="fileserve.rs">
+</p>
 
-Rust + SvelteKit fullstack file server
+<p align="center">
+  <a href="https://github.com/Nemesis-AS/fileserve-rs/releases/latest"><img src="https://img.shields.io/github/v/release/Nemesis-AS/fileserve-rs?sort=semver&color=2563eb" alt="Latest release"></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/github/license/Nemesis-AS/fileserve-rs?color=71717a" alt="License"></a>
+  <img src="https://img.shields.io/badge/backend-Rust-orange" alt="Rust">
+  <img src="https://img.shields.io/badge/frontend-SvelteKit-ff3e00" alt="SvelteKit">
+</p>
 
-Backend: Rust (actix-web, sqlx + SQLite)
-Frontend: SvelteKit (client/)
+fileserve.rs is a file server you run yourself. Point it at a folder on your own machine and you get a fast, modern web app for uploading, browsing, previewing, and sharing files, with real accounts and admin controls, and none of your files ever touch someone else's cloud.
 
-### To Do
+![My Files Page](./images/my-files.png)
 
-- [x] User creation routes
-- [x] Trash
-- [x] Storage Quota
-- [x] Password Change
-- [x] Self-update
-- [ ] Audit Log
-- [ ] Signed releases (see "Security" under Updates)
+## Features
 
-### Prerequisites
+- **Browse and organize.** Switch between list and grid views, sort by name, type, size, or date, and search as you type. Drag files in to upload, or click to pick them. A progress dock in the corner shows every upload as it happens and keeps working even while you browse elsewhere. If you'd rather not touch the mouse, keyboard shortcuts cover search, navigation, rename, delete, and more.
 
-- Rust toolchain (stable)
-- Node.js (for frontend)
-- `sqlx-cli` for SQLite:
+- **Uploads that survive a bad connection.** Uploads are chunked and resumable, so a dropped connection doesn't mean starting over. Files are also checked against what's already on disk, so uploading the same file twice doesn't use twice the storage.
 
-```sh
-cargo install sqlx-cli --no-default-features --features sqlite
-```
+- **Preview almost anything.** Images, PDFs, video, audio, and text or code files all open right in the browser. No downloading something just to see what's inside it.
 
-### Setup
+- **Trash, not delete.** Deleting a file moves it to Trash first, and a quick "Undo" toast means a slip of the finger isn't permanent. Restore it, or empty it for good when you're ready.
 
-1. Clone the repository.
-2. Install frontend dependencies:
+- **Share it your way.** Mark a file public so anyone else with an account on your server can see it, or generate a link that expires in an hour, a day, or a week and hand it to someone who doesn't need an account at all.
 
-```sh
-cd client
-npm install
-```
+  <img src="./images/file-properties.png" alt="File properties panel with sharing controls" width="520">
 
-### Database
+- **Built for more than one person.** Every user gets their own space and their own storage quota. Admins create accounts, assign roles, and manage the server. There's no open signup, which is exactly what you want when this is running on your own hardware.
 
-- Create the database file:
+- **Updates itself.** The server checks for new releases on its own, and an admin can install one with a click. Downloads are checksum-verified before anything is installed, and if a new build fails to start, it rolls back automatically. No SSH session required.
 
-```sh
-mkdir -p data
-touch data/db.sqlite3
-```
-OR on Windows:
-```ps
-mkdir data
-New-Item data/db.sqlite3 -ItemType File
-```
+  <img src="./images/config.png" alt="Admin configuration page with storage, limits, and update settings" width="520">
 
-- Run migrations:
+- **Looks the way you want.** Light and dark themes, three density settings for the file list, and a sidebar you can tuck away when you want more room.
 
-```sh
-sqlx migrate run --database-url sqlite:data/db.sqlite3
-```
+- **One binary, nothing else to run.** The frontend is built into the same binary as the backend. Deploying it is copying one file to a server and running it.
 
-- Then seed the DB:
+## Under the hood
 
-```sh
-sqlite3 data/db.sqlite3 < scripts/seed.sql
-```
-OR on Windows:
+The backend is Rust on actix-web, storing metadata in SQLite through sqlx and handling auth with JWT sessions and bcrypt-hashed passwords. The frontend is SvelteKit 5 with Tailwind, built and embedded straight into the Rust binary at compile time, so what ships is a single executable.
 
-```ps
-type migrations/seed.sql | sqlite3 data/db.sqlite3
-```
+## Getting started
 
-### Running
+Download the latest binary for your platform from the [releases page](https://github.com/Nemesis-AS/fileserve-rs/releases/latest) and run it. That's it, no database setup or build step, it creates what it needs on first launch and prints an admin password to the console.
 
-- Backend (default port 8112):
+Building from source instead, or setting it up to run permanently behind systemd or Docker? Full instructions are in [`INSTALL.md`](./INSTALL.md).
 
-```sh
-cargo run
-```
+## Found a bug? Want a feature?
 
-- Frontend (from repository root):
+Open an issue if something's broken or missing, and feel free to open a pull request if you'd like to fix it yourself. Contributions are welcome.
 
-```sh
-cd client
-npm run dev
-```
+## License
 
-Backend listens on port 8112 by default.
-
-## Updates
-
-The server checks its own GitHub releases on startup and every 24 hours. When a
-newer version exists, **Admin → Configuration → Updates** offers to install it:
-the release asset for the running platform is downloaded, checked against the
-release's `SHA256SUMS`, and swapped in. Nothing is downloaded or installed
-without an admin clicking for it.
-
-Installing does not take effect until the server restarts. The same panel has a
-**Restart now** button.
-
-### Rollback
-
-Updates are reversible without intervention:
-
-- The previous binary is kept as `fileserve-rs.exe.old` and a record is written
-  to `data/update-pending.json` before anything is replaced.
-- After restarting, the old process waits for the new one to answer `/health`.
-  If it doesn't within 30 seconds, or exits first, the previous binary is put
-  back and started again.
-- If the new binary starts but crashes before it has been up for 10 seconds, a
-  boot counter in that record trips on the next start and rolls back too. This
-  is the path that matters under a service manager, where the check above can't
-  run.
-- Once a new version has been up for 10 seconds it is confirmed: the record and
-  the old binary are deleted.
-
-If both nets fail, recovery is manual — rename `fileserve-rs.exe.old` (or
-`.failed`) back over `fileserve-rs.exe`.
-
-### Running under a service manager
-
-Under systemd or Docker a process that spawns a replacement and exits gets that
-replacement killed with it, so the server instead **exits** and relies on the
-supervisor to start the new binary. This is detected automatically, and can be
-forced either way with `UPDATE_RESTART_MODE`.
-
-**The unit must have a restart policy**, or "Restart now" is a stop button:
-
-```ini
-[Service]
-Restart=always
-```
-
-```sh
-docker run --restart unless-stopped ...
-```
-
-### Security
-
-The download is fetched over HTTPS and verified against a SHA256 published as a
-release asset. That protects against a corrupted download or a hostile proxy —
-it is **not** a signature. The checksum comes from the same release as the
-binary, so anyone able to publish a release to this repository can publish a
-matching pair, and the updater will install it and run it with the server's
-privileges. Enable 2FA and branch protection on the repository accordingly;
-signed releases are on the To Do list above.
-
-Set `SELF_UPDATE_ENABLED=false` where the binary is package-managed or
-root-owned — the server should not be rewriting a binary it doesn't own. Prefer
-running as an unprivileged user that owns its own executable.
-
-TLS root certificates are compiled in, so a binary left unupdated for years may
-eventually fail to reach GitHub; download that release manually.
-
-See `.env.example` for `UPDATE_REPO`, `UPDATE_API_BASE`, `SELF_UPDATE_ENABLED`
-and `UPDATE_RESTART_MODE`.
-
-## Releasing
-
-`.github/workflows/release.yml` builds and publishes on a tag. Asset names and
-the `SHA256SUMS` format are a contract with the updater in `src/update/` — if
-you publish releases by hand, match them exactly or existing installs will not
-find their download.
-
-1. Bump `version` in `Cargo.toml`.
-2. Commit, then tag and push:
-
-```sh
-git tag v0.1.2
-git push origin v0.1.2
-```
-
-The workflow fails fast if the tag and `Cargo.toml` disagree — a binary that
-reports a different version than its release tag would offer to update to
-itself forever. It produces:
-
-```
-fileserve-rs-v0.1.2-x86_64-pc-windows-msvc.exe
-fileserve-rs-v0.1.2-x86_64-unknown-linux-gnu
-SHA256SUMS
-```
-
-Cut the first tag of any risky change as a **pre-release** — `/releases/latest`
-excludes them, so a broken build reaches nobody.
+MIT, see [`LICENSE`](./LICENSE).
