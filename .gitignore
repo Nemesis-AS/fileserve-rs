@@ -10,5 +10,9 @@ config.ini
 
 # Environment Variables
 .env
+.env.*
+!.env*.example
 
 tmp/
+
+/deploy

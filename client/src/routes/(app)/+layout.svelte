@@ -6,6 +6,7 @@
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import Toast from '$lib/components/Toast.svelte';
 	import UploadDock from '$lib/components/UploadDock.svelte';
+	import DemoBanner from '$lib/components/DemoBanner.svelte';
 	import { authStore } from '$lib/stores/auth.svelte';
 	import { prefs } from '$lib/stores/prefs.svelte';
 	import { quotaStore } from '$lib/stores/quota.svelte';
@@ -64,7 +65,12 @@
 		return 'my';
 	});
 
-	const isAdmin = $derived(authStore.user?.role === 'admin');
+	// On a demo host the admin section is shown to everyone, as a read-only
+	// showcase backed by placeholder data. The server is unaffected: demo
+	// accounts are plain users and every admin route still refuses them.
+	const showAdmin = $derived(
+		authStore.user?.role === 'admin' || (authStore.user?.demo ?? false)
+	);
 
 	const pageTitle = $derived.by(() => {
 		if (screen === 'admin' || screen === 'admin-edit') return 'Users';
@@ -90,26 +96,32 @@
 </svelte:head>
 
 {#if authStore.user}
-	<div
-		class="grid h-full overflow-hidden bg-surface {prefs.showSidebar
-			? 'grid-cols-[auto_1fr]'
-			: 'grid-cols-[1fr]'}"
-	>
-		{#if prefs.showSidebar}
-			<Sidebar
-				{section}
-				{screen}
-				{isAdmin}
-				{counts}
-				{quota}
-				onSection={handleSection}
-				onNav={handleNav}
-			/>
-		{/if}
+	<!-- Column wrapper so the banner takes its own height instead of stealing
+	     it from the grid's scroll containers. -->
+	<div class="flex h-full flex-col overflow-hidden">
+		<DemoBanner />
 
-		<main class="relative flex min-h-0 min-w-0 flex-col overflow-hidden">
-			{@render children()}
-		</main>
+		<div
+			class="grid min-h-0 flex-1 overflow-hidden bg-surface {prefs.showSidebar
+				? 'grid-cols-[auto_1fr]'
+				: 'grid-cols-[1fr]'}"
+		>
+			{#if prefs.showSidebar}
+				<Sidebar
+					{section}
+					{screen}
+					isAdmin={showAdmin}
+					{counts}
+					{quota}
+					onSection={handleSection}
+					onNav={handleNav}
+				/>
+			{/if}
+
+			<main class="relative flex min-h-0 min-w-0 flex-col overflow-hidden">
+				{@render children()}
+			</main>
+		</div>
 	</div>
 
 	<UploadDock />

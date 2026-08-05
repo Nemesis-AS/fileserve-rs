@@ -12,7 +12,7 @@ use crate::extractors::AuthUser;
 use crate::routes::api::types::ApiResponse;
 use crate::update::{RestartSignal, UpdateState, UpdateStateData};
 
-use super::users::require_admin;
+use super::users::{reject_if_demo, require_admin};
 
 #[derive(Serialize)]
 struct VersionDto {
@@ -74,6 +74,9 @@ async fn check_for_update(
     config: web::Data<AppConfig>,
     state: web::Data<UpdateState>,
 ) -> impl Responder {
+    if let Err(resp) = reject_if_demo(&config) {
+        return resp;
+    }
     if let Err(resp) = require_admin(pool.get_ref(), &auth.username).await {
         return resp;
     }
@@ -113,6 +116,9 @@ async fn install_update(
     state: web::Data<UpdateState>,
     body: web::Json<InstallBody>,
 ) -> impl Responder {
+    if let Err(resp) = reject_if_demo(&config) {
+        return resp;
+    }
     if let Err(resp) = require_admin(pool.get_ref(), &auth.username).await {
         return resp;
     }
@@ -165,6 +171,9 @@ async fn restart_server(
     config: web::Data<AppConfig>,
     restart: web::Data<RestartSignal>,
 ) -> impl Responder {
+    if let Err(resp) = reject_if_demo(&config) {
+        return resp;
+    }
     if let Err(resp) = require_admin(pool.get_ref(), &auth.username).await {
         return resp;
     }

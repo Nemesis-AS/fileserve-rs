@@ -1,5 +1,7 @@
 import { getFiles, getPublicFiles } from '$lib/services/files';
 import { getUsers } from '$lib/services/users';
+import { authStore } from '$lib/stores/auth.svelte';
+import { DEMO_USERS } from '$lib/mock/demoAdmin';
 
 export interface SidebarCounts {
 	my: number;
@@ -25,10 +27,15 @@ export const countsStore = {
 	 * blanking the badge.
 	 */
 	async refresh() {
+		// A demo visitor is not an admin, so `/users` would 403 and leave the
+		// badge on 0 beside a Users page showing four placeholder accounts.
+		// Count the placeholders instead, so the two agree.
+		const demo = authStore.user?.demo ?? false;
+
 		const [files, publicFiles, users] = await Promise.all([
 			getFiles().catch(() => null),
 			getPublicFiles().catch(() => null),
-			getUsers().catch(() => null)
+			demo ? Promise.resolve(DEMO_USERS) : getUsers().catch(() => null)
 		]);
 
 		_counts = {

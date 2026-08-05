@@ -18,6 +18,7 @@
 		type UpdateStatus
 	} from '$lib/services/updates';
 	import { fmtDate, fmtSize } from '$lib/utils/file';
+	import { DEMO_SETTINGS, DEMO_UPDATE_STATUS } from '$lib/mock/demoAdmin';
 	import { Page, PageHead } from '$lib/components/ui/page/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Section } from '$lib/components/ui/section/index.js';
@@ -33,7 +34,18 @@
 	let maxUploadGB = $state(5);
 	let defaultQuotaGB = $state(20);
 
+	const isDemo = $derived(authStore.user?.demo ?? false);
+
 	onMount(async () => {
+		// See `demoAdmin.ts`: a demo visitor never calls the admin API, so the
+		// real storage path and settings cannot leak through this page.
+		if (authStore.user?.demo) {
+			storagePath = DEMO_SETTINGS.storagePath;
+			maxUploadGB = DEMO_SETTINGS.maxUploadGB;
+			defaultQuotaGB = DEMO_SETTINGS.defaultQuotaGB;
+			loaded = true;
+			return;
+		}
 		try {
 			const s = await getSettings();
 			storagePath = s.storagePath;
@@ -86,7 +98,16 @@
 			: 0
 	);
 
-	onMount(loadUpdateStatus);
+	onMount(() => {
+		// Demo visitors don't call the update API either: it 403s for them, and
+		// a canned "self-update disabled" state is what the page already renders
+		// for a server that has it turned off.
+		if (authStore.user?.demo) {
+			status = DEMO_UPDATE_STATUS;
+			return;
+		}
+		void loadUpdateStatus();
+	});
 
 	async function loadUpdateStatus() {
 		try {
@@ -242,7 +263,7 @@
 						hint="Where uploads are written. Applies to new uploads only — existing files are not moved."
 						class="mb-0"
 					>
-						<Input bind:value={storagePath} required />
+						<Input bind:value={storagePath} required disabled={isDemo} />
 					</Field>
 				</Section>
 
@@ -257,6 +278,7 @@
 									step={1}
 									bind:value={maxUploadGB}
 									class="w-[110px]"
+									disabled={isDemo}
 								/>
 								<span class="text-ink-muted">GB</span>
 							</div>
@@ -274,6 +296,7 @@
 									step={1}
 									bind:value={defaultQuotaGB}
 									class="w-[110px]"
+									disabled={isDemo}
 								/>
 								<span class="text-ink-muted">GB</span>
 							</div>
@@ -281,8 +304,15 @@
 					</div>
 				</Section>
 
-				<div class="flex gap-2 pt-1">
-					<Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</Button>
+				<div class="flex items-center gap-3 pt-1">
+					<Button type="submit" disabled={saving || isDemo}>
+						{saving ? 'Saving…' : 'Save changes'}
+					</Button>
+					{#if isDemo}
+						<span class="text-[12.5px] text-ink-muted">
+							Read-only in the demo. These values are for illustration.
+						</span>
+					{/if}
 				</div>
 			</form>
 		{/if}

@@ -7,6 +7,8 @@
 	import { prefs } from '$lib/stores/prefs.svelte';
 	import { toastStore } from '$lib/stores/toast.svelte';
 	import { getUsers } from '$lib/services/users';
+	import { DEMO_USERS } from '$lib/mock/demoAdmin';
+	import { fmtGB } from '$lib/utils/file';
 	import type { User } from '$lib/types';
 	import { Page, PageHead } from '$lib/components/ui/page/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
@@ -17,7 +19,16 @@
 
 	let users = $state<User[]>([]);
 
+	const isDemo = $derived(authStore.user?.demo ?? false);
+
 	onMount(async () => {
+		// A demo visitor never calls the admin API: the server would refuse it,
+		// and not asking means there is no path by which real accounts could
+		// reach the page. The roster below is openly fabricated.
+		if (authStore.user?.demo) {
+			users = DEMO_USERS;
+			return;
+		}
 		try {
 			users = await getUsers();
 		} catch (e) {
@@ -41,12 +52,17 @@
 />
 
 <Page>
-	<PageHead title="Users" sub="{users.length} accounts · admin-managed">
+	<PageHead
+		title="Users"
+		sub={isDemo ? 'Sample data · read-only in the demo' : `${users.length} accounts · admin-managed`}
+	>
 		{#snippet actions()}
-			<Button onclick={() => goto('/admin/users/new')}>
-				<Icon name="Plus" size={14} />
-				Add user
-			</Button>
+			{#if !isDemo}
+				<Button onclick={() => goto('/admin/users/new')}>
+					<Icon name="Plus" size={14} />
+					Add user
+				</Button>
+			{/if}
 		{/snippet}
 	</PageHead>
 
@@ -91,12 +107,12 @@
 						<div class="flex min-w-[140px] flex-col gap-1">
 							{#if quota == null}
 								<span class="text-[11.5px] text-ink-muted tabular-nums">
-									{used.toFixed(1)} GB · no limit
+									{fmtGB(used)} · no limit
 								</span>
 							{:else}
 								<Meter value={pct} size="xs" />
 								<span class="text-[11.5px] text-ink-muted tabular-nums">
-									{used.toFixed(1)} / {quota} GB
+									{fmtGB(used)} / {fmtGB(quota)}
 								</span>
 							{/if}
 						</div>

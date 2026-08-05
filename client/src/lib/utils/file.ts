@@ -73,6 +73,18 @@ export function fmtSize(bytes: number): string {
 	return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
+/**
+ * Formats a GB figure for display, dropping to MB below 1 GB.
+ *
+ * The API speaks GB throughout (`quotaGB`/`usedGB`), which reads fine for the
+ * multi-gigabyte quotas a self-hoster sets but turns a 200 MB demo quota into
+ * "0.1953125 GB". Fixing it at the display layer keeps the wire format alone.
+ */
+export function fmtGB(gb: number): string {
+	if (gb < 1) return `${Math.round(gb * 1024)} MB`;
+	return `${gb.toFixed(1)} GB`;
+}
+
 export function fmtDate(d: string): string {
 	const now = new Date();
 	const date = new Date(d);

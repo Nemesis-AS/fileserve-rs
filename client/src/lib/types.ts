@@ -28,6 +28,19 @@ export interface User {
 	quotaGB?: number;
 	usedGB?: number;
 	files?: number;
+	/** True for a throwaway account on a demo deployment. */
+	demo?: boolean;
+	/** ISO instant this demo account and its files are deleted. */
+	demoExpiresAt?: string | null;
+}
+
+/** Server facts the app needs before anyone has signed in. */
+export interface ServerConfig {
+	demo: boolean;
+	demoTtlMinutes?: number;
+	demoQuotaBytes?: number;
+	demoShareMaxMinutes?: number;
+	maxUploadBytes: number;
 }
 
 export type AuditEventType =

@@ -26,6 +26,16 @@ fn main() {
         return;
     }
 
+    // Escape hatch for builds where the client was produced separately and
+    // `static/` is already populated — a Docker image that builds the frontend
+    // in its own stage, for instance, so node never has to exist alongside the
+    // Rust toolchain.
+    println!("cargo:rerun-if-env-changed=SKIP_CLIENT_BUILD");
+    if env::var("SKIP_CLIENT_BUILD").is_ok() {
+        println!("cargo:warning=SKIP_CLIENT_BUILD is set; using the existing static/ directory");
+        return;
+    }
+
     let client_dir = "client";
 
     // Change directory

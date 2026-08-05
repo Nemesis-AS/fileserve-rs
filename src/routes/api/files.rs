@@ -7,7 +7,8 @@ use actix_files::NamedFile;
 use actix_web::{
     HttpRequest, HttpResponse, Responder, guard,
     http::header::{
-        ContentDisposition, ContentLength, ContentType, DispositionParam, DispositionType,
+        self, ContentDisposition, ContentLength, ContentType, DispositionParam, DispositionType,
+        HeaderValue,
     },
     middleware::from_fn,
     web::{self, ServiceConfig},
@@ -20,6 +21,7 @@ use uuid::Uuid;
 
 use crate::{
     config::AppConfig,
+    demo,
     extractors::{AuthUser, ShareClaims, verify_share_token},
     middlewares::tus_resumable,
     models::{FILE_COLUMNS, FileRecord, Settings},
@@ -33,13 +35,118 @@ use crate::{
     },
 };
 
-async fn get_server_config() -> impl Responder {
+async fn get_server_config(
+    settings: web::Data<Settings>,
+    config: web::Data<AppConfig>,
+) -> impl Responder {
     HttpResponse::NoContent()
         .append_header(("Tus-Resumable", "1.0.0"))
         .append_header(("Tus-Version", "1.0.0"))
-        .append_header(("Tus-Max-Size", 1073741824))
-        .append_header(("Tus-Extension", "creation"))
+        .append_header((
+            "Tus-Max-Size",
+            config.effective_max_upload(settings.tus_max_size()),
+        ))
+        // Deferred length is supported by `create_upload`/`upload_chunk`, so
+        // say so rather than advertising only creation.
+        .append_header(("Tus-Extension", "creation,creation-defer-length"))
         .finish()
+}
+
+/// Bytes the user may still consume, or `None` when their quota is unlimited.
+///
+/// Usage is summed live over their non-trashed files rather than stored, so it
+/// can never drift from the rows it describes, and in-flight uploads are
+/// subtracted too. That reservation term is what stops concurrent uploads from
+/// collectively overshooting: until an upload lands in `files` it is invisible
+/// to every other upload, so each one would otherwise measure itself against a
+/// quota that none of its siblings had claimed yet. The cost is that an
+/// abandoned upload holds its bytes until `expires_at`, which is why the stale
+/// upload sweep is not optional.
+///
+/// `exclude_upload` drops one upload from the reservation, for the call sites
+/// that are weighing that upload's own bytes and must not count them twice.
+///
+/// The result is signed, because lowering a quota below existing usage leaves
+/// it legitimately negative. Returns [`sqlx::Error::RowNotFound`] when the user
+/// is gone, which callers treat as an expired session rather than a fault.
+async fn quota_remaining(
+    pool: &Pool<Sqlite>,
+    username: &str,
+    exclude_upload: Option<&str>,
+) -> Result<Option<i64>, sqlx::Error> {
+    let quota: Option<i64> =
+        sqlx::query_scalar::<_, Option<i64>>("SELECT quota_bytes FROM users WHERE username = ?")
+            .bind(username)
+            .fetch_one(pool)
+            .await?;
+
+    let Some(quota) = quota else {
+        return Ok(None);
+    };
+
+    let used: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(file_size), 0) FROM files \
+         WHERE owner_uname = ? AND deleted_at IS NULL",
+    )
+    .bind(username)
+    .fetch_one(pool)
+    .await?;
+
+    // `datetime()` on both sides rather than a string comparison: sqlx writes
+    // this column as RFC3339 with a `+00:00` offset, which does not compare
+    // lexicographically against SQLite's `Z`-suffixed `'now'`.
+    let reserved: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(COALESCE(file_size, 0)), 0) FROM uploads \
+         WHERE owner_uname = ?1 AND status != 'completed' \
+           AND (expires_at IS NULL OR datetime(expires_at) > datetime('now')) \
+           AND (?2 IS NULL OR id != ?2)",
+    )
+    .bind(username)
+    .bind(exclude_upload)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(Some(quota - used - reserved))
+}
+
+/// Turns a [`quota_remaining`] failure into a response. A missing user means
+/// the account was removed mid-flight, which the demo reaper does routinely.
+fn quota_lookup_error(err: sqlx::Error) -> HttpResponse {
+    match err {
+        sqlx::Error::RowNotFound => {
+            HttpResponse::Unauthorized().json(ApiResponse::error("User no longer exists"))
+        }
+        e => HttpResponse::InternalServerError().json(ApiResponse::error(&e.to_string())),
+    }
+}
+
+fn quota_exceeded() -> HttpResponse {
+    HttpResponse::PayloadTooLarge().json(ApiResponse::error("Storage quota exceeded"))
+}
+
+/// Discards a staged upload: the row and the partial bytes at `uploads/{id}`.
+///
+/// Only valid before the upload has been moved into the content-addressed
+/// store, because up to that point the staged file is uniquely ours. Afterwards
+/// the bytes live at `files/{checksum}`, where another owner may share them and
+/// removing the file would take theirs with it.
+///
+/// Failures are logged rather than returned: every caller is already on its way
+/// out with an error, and leaving a stray file for the sweep to collect beats
+/// masking the reason the upload was rejected.
+async fn abandon_upload(pool: &Pool<Sqlite>, settings: &Settings, upload_id: &str) {
+    if let Err(e) = sqlx::query("DELETE FROM uploads WHERE id = ?")
+        .bind(upload_id)
+        .execute(pool)
+        .await
+    {
+        eprintln!("WARN: failed to drop abandoned upload {upload_id}: {e}");
+    }
+
+    let path = upload_file_path(&settings.storage_path(), upload_id);
+    if let Ok(Err(e)) = web::block(move || fs::remove_file(&path)).await {
+        eprintln!("WARN: failed to remove staged file for upload {upload_id}: {e}");
+    }
 }
 
 async fn create_upload(
@@ -47,7 +154,9 @@ async fn create_upload(
     user: AuthUser,
     pool: web::Data<Pool<Sqlite>>,
     settings: web::Data<Settings>,
+    config: web::Data<AppConfig>,
 ) -> impl Responder {
+    let max_upload = config.effective_max_upload(settings.tus_max_size());
     let upload_length_header = req
         .headers()
         .get("Upload-Length")
@@ -87,9 +196,9 @@ async fn create_upload(
                 .json(ApiResponse::error("Upload-Length cannot be negative"));
         }
 
-        if length > settings.tus_max_size() {
+        if length > max_upload {
             return HttpResponse::PayloadTooLarge()
-                .append_header(("Tus-Max-Size", settings.tus_max_size().to_string()))
+                .append_header(("Tus-Max-Size", max_upload.to_string()))
                 .json(ApiResponse::error("Upload-Length exceeds Tus-Max-Size"));
         }
 
@@ -108,43 +217,29 @@ async fn create_upload(
         return HttpResponse::BadRequest().json(ApiResponse::error("Invalid metadata"));
     };
 
-    // Enforce the owner's storage quota when the size is declared up front.
-    // Usage is the sum of their non-trashed files (computed, never stored); a
-    // NULL quota means unlimited. Deferred-length uploads can't be pre-checked
-    // here and remain bounded only by Tus-Max-Size.
-    if let Some(length) = content_length {
-        let quota: Option<i64> = match sqlx::query_scalar::<_, Option<i64>>(
-            "SELECT quota_bytes FROM users WHERE username = ?",
-        )
-        .bind(&user.username)
-        .fetch_one(pool.get_ref())
-        .await
-        {
-            Ok(quota) => quota,
-            Err(e) => {
-                return HttpResponse::InternalServerError().json(ApiResponse::error(&e.to_string()));
-            }
-        };
+    // Enforce the owner's storage quota. A NULL quota means unlimited.
+    let remaining = match quota_remaining(pool.get_ref(), &user.username, None).await {
+        Ok(remaining) => remaining,
+        Err(e) => return quota_lookup_error(e),
+    };
 
-        if let Some(quota) = quota {
-            let used: i64 = sqlx::query_scalar(
-                "SELECT COALESCE(SUM(file_size), 0) FROM files \
-                 WHERE owner_uname = ? AND deleted_at IS NULL",
-            )
-            .bind(&user.username)
-            .fetch_one(pool.get_ref())
-            .await
-            .unwrap_or(0);
-
-            if used + length > quota {
-                return HttpResponse::PayloadTooLarge()
-                    .json(ApiResponse::error("Storage quota exceeded"));
-            }
+    if let Some(remaining) = remaining {
+        match content_length {
+            Some(length) if length > remaining => return quota_exceeded(),
+            // A deferred-length upload has no size to weigh yet, so it is only
+            // refused outright when there is no room at all. Every chunk is
+            // checked as it lands, and the total again at finalize, so this
+            // cannot be used to slip past the quota.
+            None if remaining <= 0 => return quota_exceeded(),
+            _ => {}
         }
     }
 
     let uid = Uuid::new_v4().simple().to_string();
-    let expires_at = chrono::Local::now() + chrono::Duration::minutes(60);
+    // UTC, not local: every comparison against this column is made against
+    // SQLite's `'now'`, which is UTC. Writing a local timestamp here made
+    // uploads look fresher (or staler) than they are by the host's offset.
+    let expires_at = Utc::now() + Duration::minutes(60);
 
     let insert_result = sqlx::query(
         "INSERT INTO uploads(id, file_dir, file_size, file_name, checksum, mime_type, owner_uname, expires_at) \
@@ -197,14 +292,16 @@ async fn create_upload(
 
 async fn get_upload_offset(
     file_id_param: web::Path<String>,
+    user: AuthUser,
     pool: web::Data<Pool<Sqlite>>,
 ) -> impl Responder {
     let file_id = file_id_param.into_inner();
 
-    let upload_res = sqlx::query("SELECT offset, file_size FROM uploads WHERE id = ?")
-        .bind(file_id)
-        .fetch_optional(pool.get_ref())
-        .await;
+    let upload_res =
+        sqlx::query("SELECT offset, file_size, owner_uname FROM uploads WHERE id = ?")
+            .bind(file_id)
+            .fetch_optional(pool.get_ref())
+            .await;
 
     let upload = match upload_res {
         Ok(Some(upload)) => upload,
@@ -215,6 +312,14 @@ async fn get_upload_offset(
             return HttpResponse::InternalServerError().json(ApiResponse::error(&e.to_string()));
         }
     };
+
+    // An upload id is a bearer token otherwise: anyone holding one could read
+    // its progress. Report someone else's upload as missing rather than
+    // forbidden, so ids can't be probed for existence.
+    let owner: Option<String> = upload.try_get("owner_uname").ok().flatten();
+    if owner.as_deref() != Some(user.username.as_str()) {
+        return HttpResponse::NotFound().json(ApiResponse::error("Upload not found"));
+    }
 
     let offset: i64 = match upload.try_get("offset") {
         Ok(v) => v,
@@ -253,8 +358,10 @@ async fn upload_chunk(
     content_type: web::Header<ContentType>,
     content_length: web::Header<ContentLength>,
     file_id_param: web::Path<String>,
+    user: AuthUser,
     pool: web::Data<Pool<Sqlite>>,
     settings: web::Data<Settings>,
+    config: web::Data<AppConfig>,
     checksum_cache: web::Data<ChecksumCache>,
 ) -> impl Responder {
     let file_id = file_id_param.into_inner();
@@ -301,6 +408,18 @@ async fn upload_chunk(
         }
     };
 
+    // Without this, an upload id alone is enough to push bytes into someone
+    // else's upload. Reported as missing so ids can't be probed for existence.
+    let owner_uname: String = match upload.try_get::<Option<String>, _>("owner_uname") {
+        Ok(Some(owner)) if owner == user.username => owner,
+        Ok(_) => {
+            return HttpResponse::NotFound().json(ApiResponse::error("Upload not found"));
+        }
+        Err(e) => {
+            return HttpResponse::InternalServerError().json(ApiResponse::error(&e.to_string()));
+        }
+    };
+
     let upload_offset: i64 = match upload.try_get("offset") {
         Ok(v) => v,
         Err(e) => {
@@ -331,10 +450,20 @@ async fn upload_chunk(
                     .json(ApiResponse::error("Upload-Length cannot be negative"));
             }
 
-            if declared_size > settings.tus_max_size() {
+            let max_upload = config.effective_max_upload(settings.tus_max_size());
+            if declared_size > max_upload {
                 return HttpResponse::PayloadTooLarge()
-                    .append_header(("Tus-Max-Size", settings.tus_max_size().to_string()))
+                    .append_header(("Tus-Max-Size", max_upload.to_string()))
                     .json(ApiResponse::error("Upload-Length exceeds Tus-Max-Size"));
+            }
+
+            // The point a deferred-length upload finally becomes measurable.
+            // Before this fix it was admitted at creation with no size and then
+            // never weighed against the quota at all.
+            match quota_remaining(pool.get_ref(), &owner_uname, Some(&file_id)).await {
+                Ok(Some(remaining)) if declared_size > remaining => return quota_exceeded(),
+                Ok(_) => {}
+                Err(e) => return quota_lookup_error(e),
             }
 
             if declared_size < upload_offset {
@@ -384,6 +513,16 @@ async fn upload_chunk(
     }
 
     let new_offset = upload_offset + len;
+
+    // Stop an upload the moment its staged bytes would exceed the quota rather
+    // than letting it stream to completion and rejecting it at the end. This is
+    // the only bound a deferred-length upload has before its size is declared.
+    match quota_remaining(pool.get_ref(), &owner_uname, Some(&file_id)).await {
+        Ok(Some(remaining)) if new_offset > remaining => return quota_exceeded(),
+        Ok(_) => {}
+        Err(e) => return quota_lookup_error(e),
+    }
+
     let upload_path = upload_file_path(&settings.storage_path(), &file_id);
 
     let cached_hasher = checksum_cache.lock().unwrap().get(&file_id).cloned();
@@ -445,6 +584,24 @@ async fn upload_chunk(
                     eprintln!(
                         "WARN: checksum mismatch for upload {file_id}: client reported {client_checksum}, computed {computed_checksum}"
                     );
+                }
+            }
+
+            // Last gate before the bytes become a file. Deliberately ahead of
+            // the move below: while they still sit at `uploads/{id}` they are
+            // uniquely ours and rejecting costs one unlink, whereas after the
+            // move they live at the deduplicated `files/{checksum}` path, where
+            // another owner may already share them and deleting would take
+            // their file with it.
+            match quota_remaining(pool.get_ref(), &owner_uname, Some(&file_id)).await {
+                Ok(Some(remaining)) if size > remaining => {
+                    abandon_upload(pool.get_ref(), &settings, &file_id).await;
+                    return quota_exceeded();
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    abandon_upload(pool.get_ref(), &settings, &file_id).await;
+                    return quota_lookup_error(e);
                 }
             }
 
@@ -565,7 +722,17 @@ async fn download_file(
 
     // A public file is downloadable by any authenticated user; unauthenticated
     // access still requires a valid share token.
-    let authorized_as_public = file.public && user.is_some();
+    //
+    // On a demo host "public" is scoped to the owner, matching the listing.
+    // This is the half that actually matters: scoping only the listing would
+    // leave cross-visitor download-by-id wide open, and an unguessable UUID is
+    // not authorization.
+    let authorized_as_public = file.public
+        && match (&user, config.demo.is_some()) {
+            (Some(user), true) => user.username == file.owner_uname,
+            (Some(_), false) => true,
+            (None, _) => false,
+        };
 
     if !owned_by_user && !authorized_by_link && !authorized_as_public {
         return HttpResponse::NotFound().json(ApiResponse::error("File not found"));
@@ -578,14 +745,23 @@ async fn download_file(
         Err(_) => return HttpResponse::NotFound().json(ApiResponse::error("File not found")),
     };
 
-    let content_type: mime::Mime = file
+    let declared: mime::Mime = file
         .mime_type
         .parse()
         .unwrap_or(mime::APPLICATION_OCTET_STREAM);
 
-    // Inline lets the browser render the file in a preview (img/iframe);
-    // attachment (the default) forces the save dialog.
-    let disposition = if query.inline.unwrap_or(false) {
+    // Only a type we are willing to let a browser render may be served inline,
+    // and only such a type keeps its declared value. Everything else is
+    // downgraded to an opaque download: `mime_type` arrives from the client in
+    // the upload metadata and is never validated, so honouring it for, say,
+    // `text/html` would be stored XSS against this origin.
+    let renderable = inline_safe(&declared);
+    let content_type = if renderable {
+        declared
+    } else {
+        mime::APPLICATION_OCTET_STREAM
+    };
+    let disposition = if renderable && query.inline.unwrap_or(false) {
         DispositionType::Inline
     } else {
         DispositionType::Attachment
@@ -598,7 +774,39 @@ async fn download_file(
             parameters: vec![DispositionParam::Filename(file.file_name.clone())],
         });
 
-    named_file.into_response(&req)
+    let mut response = named_file.into_response(&req);
+    let headers = response.headers_mut();
+
+    headers.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
+    // Deliberately stricter than the app-wide policy, which `security_headers`
+    // skips because this one is already set. `frame-ancestors 'self'` is what
+    // still lets the PDF preview frame this response.
+    headers.insert(
+        header::CONTENT_SECURITY_POLICY,
+        HeaderValue::from_static("default-src 'none'; sandbox; frame-ancestors 'self'"),
+    );
+    headers.insert(
+        header::X_FRAME_OPTIONS,
+        HeaderValue::from_static("SAMEORIGIN"),
+    );
+
+    response
+}
+
+/// Types the browser may render directly. SVG is excluded despite being an
+/// image because it can carry script; text is excluded because nothing needs
+/// it inline (the text preview reads the body with `fetch()` and renders it
+/// into a `<pre>`, so disposition never applies to it).
+fn inline_safe(mime: &mime::Mime) -> bool {
+    match mime.type_() {
+        mime::IMAGE => mime.subtype() != mime::SVG,
+        mime::VIDEO | mime::AUDIO => true,
+        mime::APPLICATION => mime.subtype() == mime::PDF,
+        _ => false,
+    }
 }
 
 async fn create_share_link(
@@ -628,7 +836,20 @@ async fn create_share_link(
         return HttpResponse::NotFound().json(ApiResponse::error("File not found"));
     }
 
-    let minutes = body.expires_in_minutes.unwrap_or(60).clamp(1, 60 * 24 * 7);
+    let mut ceiling = 60 * 24 * 7;
+    if let Some(demo) = config.demo.as_ref() {
+        // Two bounds, both needed. The first stops the demo being used as a
+        // general file host; the second stops a link outliving the file it
+        // points at, since the account's blobs go when the account does.
+        match demo::share_ceiling_minutes(pool.get_ref(), demo, &user.username).await {
+            Ok(demo_ceiling) => ceiling = ceiling.min(demo_ceiling),
+            Err(e) => {
+                return HttpResponse::InternalServerError().json(ApiResponse::error(&e.to_string()));
+            }
+        }
+    }
+
+    let minutes = body.expires_in_minutes.unwrap_or(60).clamp(1, ceiling);
     let expires_at = Utc::now() + Duration::minutes(minutes);
 
     let claims = ShareClaims {
@@ -679,18 +900,38 @@ async fn list_user_files(user: Option<AuthUser>, pool: web::Data<Pool<Sqlite>>) 
     ))
 }
 
-async fn list_public_files(user: Option<AuthUser>, pool: web::Data<Pool<Sqlite>>) -> impl Responder {
-    if user.is_none() {
+async fn list_public_files(
+    user: Option<AuthUser>,
+    pool: web::Data<Pool<Sqlite>>,
+    config: web::Data<AppConfig>,
+) -> impl Responder {
+    let Some(user) = user else {
         return HttpResponse::Forbidden().json(ApiResponse::error("User not logged in"));
-    }
+    };
 
-    // Every public file, regardless of owner — the section is a shared listing.
-    let files_res = sqlx::query_as::<_, FileRecord>(&format!(
-        "SELECT {FILE_COLUMNS} FROM files WHERE public = 1 AND deleted_at IS NULL \
-         ORDER BY created_at DESC, file_name LIMIT 200",
-    ))
-    .fetch_all(pool.as_ref())
-    .await;
+    // Normally every public file regardless of owner, since the section is a
+    // shared listing. On a demo host it is scoped to the caller: visitors are
+    // strangers to each other, and one of them publishing something must not
+    // put it in front of everybody else. Scoped for *every* caller here rather
+    // than only for demo accounts, so there is one code path and nothing to
+    // forget.
+    let files_res = if config.demo.is_some() {
+        sqlx::query_as::<_, FileRecord>(&format!(
+            "SELECT {FILE_COLUMNS} FROM files \
+             WHERE public = 1 AND deleted_at IS NULL AND owner_uname = ? \
+             ORDER BY created_at DESC, file_name LIMIT 200",
+        ))
+        .bind(&user.username)
+        .fetch_all(pool.as_ref())
+        .await
+    } else {
+        sqlx::query_as::<_, FileRecord>(&format!(
+            "SELECT {FILE_COLUMNS} FROM files WHERE public = 1 AND deleted_at IS NULL \
+             ORDER BY created_at DESC, file_name LIMIT 200",
+        ))
+        .fetch_all(pool.as_ref())
+        .await
+    };
 
     if let Err(e) = files_res {
         return HttpResponse::InternalServerError().json(ApiResponse::error(&e.to_string()));
@@ -831,6 +1072,33 @@ async fn restore_file(
     pool: web::Data<Pool<Sqlite>>,
 ) -> impl Responder {
     let file_id = file_id.into_inner();
+
+    // Trashed files don't count against the quota, so restoring one adds its
+    // bytes back and has to be weighed like a fresh upload. Without this a user
+    // at their limit could trash a file, upload a replacement, then restore the
+    // original and end up over quota.
+    let size: Option<i64> = match sqlx::query_scalar(
+        "SELECT file_size FROM files \
+         WHERE id = ? AND owner_uname = ? AND deleted_at IS NOT NULL",
+    )
+    .bind(&file_id)
+    .bind(&user.username)
+    .fetch_optional(pool.get_ref())
+    .await
+    {
+        Ok(size) => size,
+        Err(e) => {
+            return HttpResponse::InternalServerError().json(ApiResponse::error(&e.to_string()));
+        }
+    };
+
+    if let Some(size) = size {
+        match quota_remaining(pool.get_ref(), &user.username, None).await {
+            Ok(Some(remaining)) if size > remaining => return quota_exceeded(),
+            Ok(_) => {}
+            Err(e) => return quota_lookup_error(e),
+        }
+    }
 
     let result = sqlx::query_as::<_, FileRecord>(&format!(
         "UPDATE files SET deleted_at = NULL \

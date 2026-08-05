@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, Pool, Sqlite};
 use uuid::Uuid;
 
+use crate::config::AppConfig;
 use crate::extractors::AuthUser;
 use crate::models::Settings;
 use crate::routes::api::types::ApiResponse;
@@ -22,6 +23,7 @@ const BYTES_PER_GB: f64 = 1_073_741_824.0;
 /// than stored, so it can never drift from the actual file rows. The password
 /// hash is deliberately never selected so it can't leak into a response.
 const USER_SELECT: &str = "SELECT u.username, u.name, u.role, u.avatar, u.status, u.quota_bytes, \
+     u.demo_expires_at, \
      COALESCE(SUM(f.file_size), 0) AS used_bytes, \
      COUNT(f.id) AS file_count \
      FROM users u \
@@ -35,6 +37,7 @@ struct UserRow {
     avatar: Option<String>,
     status: String,
     quota_bytes: Option<i64>,
+    demo_expires_at: Option<chrono::DateTime<chrono::Utc>>,
     used_bytes: i64,
     file_count: i64,
 }
@@ -55,6 +58,11 @@ struct UserDto {
     #[serde(rename = "usedGB")]
     used_gb: f64,
     files: i64,
+    /// Lets the client show the demo banner and countdown after rehydrating
+    /// from `/auth/me`. UI only; the server enforces demo limits regardless.
+    demo: bool,
+    #[serde(rename = "demoExpiresAt", skip_serializing_if = "Option::is_none")]
+    demo_expires_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 impl From<UserRow> for UserDto {
@@ -70,6 +78,8 @@ impl From<UserRow> for UserDto {
             quota_gb: row.quota_bytes.map(|b| b as f64 / BYTES_PER_GB),
             used_gb: row.used_bytes as f64 / BYTES_PER_GB,
             files: row.file_count,
+            demo: row.demo_expires_at.is_some(),
+            demo_expires_at: row.demo_expires_at,
         }
     }
 }
@@ -97,6 +107,22 @@ fn is_valid_status(status: &str) -> bool {
 /// maps to `None` = unlimited.
 fn quota_gb_to_bytes(gb: Option<f64>) -> Option<i64> {
     gb.map(|g| (g * BYTES_PER_GB).round() as i64)
+}
+
+/// Rejects every state-changing admin action on a demo deployment.
+///
+/// Called ahead of the role check, so it applies to real admins too. That is
+/// intentional: `PATCH /settings` can repoint `storage_path` anywhere the
+/// process can write, and `POST /system/update/install` downloads and executes
+/// a binary. A demo host is meant to be redeployed rather than administered, so
+/// even a leaked admin cookie should not be able to reach either.
+pub(crate) fn reject_if_demo(config: &AppConfig) -> Result<(), HttpResponse> {
+    if config.demo.is_some() {
+        return Err(HttpResponse::Forbidden().json(ApiResponse::error(
+            "This is a read-only demo. Changes are disabled here.",
+        )));
+    }
+    Ok(())
 }
 
 /// Resolves the caller's role and rejects non-admins. Returns the offending
@@ -222,6 +248,22 @@ async fn change_password(
     body: web::Json<ChangePasswordBody>,
     pool: web::Data<Pool<Sqlite>>,
 ) -> impl Responder {
+    // Demo accounts store a sentinel rather than a hash, so the current-password
+    // check below could never pass. Say so plainly instead of returning a 401
+    // that looks like the visitor mistyped something.
+    let is_demo: Option<Option<String>> =
+        sqlx::query_scalar("SELECT demo_expires_at FROM users WHERE username = ?")
+            .bind(&auth.username)
+            .fetch_optional(pool.get_ref())
+            .await
+            .ok()
+            .flatten();
+    if matches!(is_demo, Some(Some(_))) {
+        return HttpResponse::Forbidden().json(ApiResponse::error(
+            "Demo accounts cannot change their password",
+        ));
+    }
+
     if body.new_password.len() < MIN_PASSWORD_LEN {
         return HttpResponse::BadRequest().json(ApiResponse::error(
             "New password must be at least 8 characters",
@@ -328,7 +370,11 @@ async fn create_user(
     body: web::Json<CreateUserBody>,
     pool: web::Data<Pool<Sqlite>>,
     settings: web::Data<Settings>,
+    config: web::Data<AppConfig>,
 ) -> impl Responder {
+    if let Err(resp) = reject_if_demo(&config) {
+        return resp;
+    }
     if let Err(resp) = require_admin(pool.get_ref(), &auth.username).await {
         return resp;
     }
@@ -455,7 +501,11 @@ async fn update_user(
     path: web::Path<String>,
     body: web::Json<UpdateUserBody>,
     pool: web::Data<Pool<Sqlite>>,
+    config: web::Data<AppConfig>,
 ) -> impl Responder {
+    if let Err(resp) = reject_if_demo(&config) {
+        return resp;
+    }
     if let Err(resp) = require_admin(pool.get_ref(), &auth.username).await {
         return resp;
     }
@@ -564,7 +614,11 @@ async fn delete_user(
     auth: AuthUser,
     path: web::Path<String>,
     pool: web::Data<Pool<Sqlite>>,
+    config: web::Data<AppConfig>,
 ) -> impl Responder {
+    if let Err(resp) = reject_if_demo(&config) {
+        return resp;
+    }
     if let Err(resp) = require_admin(pool.get_ref(), &auth.username).await {
         return resp;
     }

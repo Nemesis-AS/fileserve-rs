@@ -4,10 +4,11 @@ use actix_web::{
 };
 use sqlx::{Pool, Sqlite};
 
+use crate::config::AppConfig;
 use crate::extractors::AuthUser;
 use crate::models::{Settings, SettingsPatch};
 use crate::routes::api::types::ApiResponse;
-use super::users::require_admin;
+use super::users::{reject_if_demo, require_admin};
 
 /// `GET /settings` — the current server settings. Admin-only; the JWT secret is
 /// never part of this shape, so it can't leak here.
@@ -33,8 +34,15 @@ async fn update_settings(
     auth: AuthUser,
     pool: web::Data<Pool<Sqlite>>,
     settings: web::Data<Settings>,
+    config: web::Data<AppConfig>,
     body: web::Json<SettingsPatch>,
 ) -> impl Responder {
+    // Ahead of the role check on purpose. This route can repoint `storage_path`
+    // at anywhere the process can write, which is not something a demo host
+    // should permit even to a real admin.
+    if let Err(resp) = reject_if_demo(&config) {
+        return resp;
+    }
     if let Err(resp) = require_admin(pool.get_ref(), &auth.username).await {
         return resp;
     }

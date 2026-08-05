@@ -42,6 +42,18 @@ export async function login(username: string, password: string): Promise<LoginRe
 }
 
 /**
+ * Provisions a throwaway demo account and signs in as it. Only present on a
+ * server running in demo mode; anywhere else the route does not exist.
+ */
+export async function startDemo(): Promise<LoginResult> {
+	const res = await fetch(`${API}/auth/demo`, {
+		method: 'POST',
+		credentials: 'include'
+	});
+	return unwrap<LoginResult>(res, 'Could not start the demo');
+}
+
+/**
  * Clears the server session cookie. Never throws: the caller always clears local
  * state, so a failure here must not strand the user in a signed-in UI.
  */

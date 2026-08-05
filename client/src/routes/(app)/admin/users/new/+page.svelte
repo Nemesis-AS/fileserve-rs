@@ -13,6 +13,12 @@
 	import { Field } from '$lib/components/ui/field/index.js';
 	import { Input, Select } from '$lib/components/ui/input/index.js';
 
+	// Nothing to create on a demo host: the server refuses it and the roster is
+	// placeholder data anyway. Bounce rather than render a form that can't work.
+	$effect(() => {
+		if (authStore.user?.demo) goto('/admin/users');
+	});
+
 	let name = $state('');
 	let username = $state('');
 	let role = $state<'user' | 'admin'>('user');

@@ -4,8 +4,19 @@
 	import { Modal } from './ui/modal/index.js';
 	import { Button } from './ui/button/index.js';
 	import { Dropzone } from './ui/dropzone/index.js';
+	import { serverConfig } from '$lib/stores/serverConfig.svelte';
+	import { fmtSize } from '$lib/utils/file';
 
 	let { onClose }: { onClose: () => void } = $props();
+
+	// The real ceiling, which on a demo host is well below what the admin
+	// Configuration page shows as illustrative settings.
+	const limit = $derived(serverConfig.config.maxUploadBytes);
+	const hint = $derived(
+		Number.isFinite(limit)
+			? `Select one or more files · up to ${fmtSize(limit)} each`
+			: 'Select one or more files'
+	);
 
 	let drag = $state(false);
 	let inputEl: HTMLInputElement | undefined = $state();
@@ -36,7 +47,7 @@
 <Modal title="Upload files" {onClose}>
 	<Dropzone
 		active={drag}
-		hint="Select one or more files"
+		{hint}
 		ondragover={(e: DragEvent) => {
 			e.preventDefault();
 			drag = true;

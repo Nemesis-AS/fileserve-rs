@@ -8,6 +8,8 @@
 	import { prefs } from '$lib/stores/prefs.svelte';
 	import { toastStore } from '$lib/stores/toast.svelte';
 	import { getUsers, updateUser, deleteUser } from '$lib/services/users';
+	import { DEMO_USERS } from '$lib/mock/demoAdmin';
+	import { fmtGB } from '$lib/utils/file';
 	import type { User } from '$lib/types';
 	import { Page } from '$lib/components/ui/page/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
@@ -27,8 +29,12 @@
 	let quotaGB = $state(20);
 	let password = $state('');
 
+	const isDemo = $derived(authStore.user?.demo ?? false);
+
 	onMount(async () => {
-		const users = await getUsers();
+		// Same rule as the list page: demo visitors read placeholders, never the
+		// admin API.
+		const users = authStore.user?.demo ? DEMO_USERS : await getUsers();
 		user = users.find((u) => u.id === userId) ?? null;
 		if (user) {
 			name = user.name;
@@ -94,7 +100,7 @@
 			<Section label="Profile">
 				<div class="flex gap-3">
 					<Field label="Full name" class="mb-0 flex-1">
-						<Input bind:value={name} required />
+						<Input bind:value={name} required disabled={isDemo} />
 					</Field>
 					<Field label="Username" hint="Contact your admin to change." class="mb-0 flex-1">
 						<Input value={username} disabled />
@@ -105,13 +111,13 @@
 			<Section label="Access">
 				<div class="flex gap-3">
 					<Field label="Role" class="mb-0 flex-1">
-						<Select bind:value={role}>
+						<Select bind:value={role} disabled={isDemo}>
 							<option value="user">User</option>
 							<option value="admin">Admin</option>
 						</Select>
 					</Field>
 					<Field label="Status" class="mb-0 flex-1">
-						<Select bind:value={status}>
+						<Select bind:value={status} disabled={isDemo}>
 							<option value="active">Active</option>
 							<option value="suspended">Suspended</option>
 						</Select>
@@ -119,10 +125,10 @@
 				</div>
 				<Field label="Storage quota" class="mb-0">
 					<div class="flex items-center gap-3">
-						<Input type="number" min={1} max={2000} bind:value={quotaGB} class="w-[110px]" />
+						<Input type="number" min={1} max={2000} bind:value={quotaGB} class="w-[110px]" disabled={isDemo} />
 						<span class="text-ink-muted">GB</span>
 						<span class="ml-auto text-[12px] text-ink-muted">
-							Currently using {(user.usedGB ?? 0).toFixed(1)} GB
+							Currently using {fmtGB(user.usedGB ?? 0)}
 						</span>
 					</div>
 				</Field>
@@ -130,17 +136,23 @@
 
 			<Section label="Reset password">
 				<Field label="New password" class="mb-0">
-					<Input type="text" placeholder="Leave blank to keep current" bind:value={password} />
+					<Input type="text" placeholder="Leave blank to keep current" bind:value={password} disabled={isDemo} />
 				</Field>
 			</Section>
 
 			<div class="flex gap-2 pt-1">
-				<Button type="submit">Save changes</Button>
+				<Button type="submit" disabled={isDemo}>Save changes</Button>
 				<Button variant="ghost" onclick={() => goto('/admin/users')}>Cancel</Button>
-				<Button variant="ghost" class="ml-auto border-transparent text-danger" onclick={handleDelete}>
-					<Icon name="Trash" size={14} />
-					Delete account
-				</Button>
+				{#if !isDemo}
+					<Button
+						variant="ghost"
+						class="ml-auto border-transparent text-danger"
+						onclick={handleDelete}
+					>
+						<Icon name="Trash" size={14} />
+						Delete account
+					</Button>
+				{/if}
 			</div>
 		</form>
 	{/if}

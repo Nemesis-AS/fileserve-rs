@@ -2,6 +2,7 @@
 	import Icon from './Icon.svelte';
 	import Logo from './Logo.svelte';
 	import type { FileSection } from '$lib/types';
+	import { fmtGB } from '$lib/utils/file';
 	import { NavItem } from './ui/nav-item/index.js';
 	import { Meter } from './ui/meter/index.js';
 
@@ -95,9 +96,11 @@
 		<div class="flex justify-between">
 			<span>Storage</span>
 			{#if quota.total == null}
-				<span><b class="font-medium text-ink">{quota.used.toFixed(1)}</b> GB used</span>
+				<span><b class="font-medium text-ink">{fmtGB(quota.used)}</b> used</span>
 			{:else}
-				<span><b class="font-medium text-ink">{quota.used.toFixed(1)}</b> / {quota.total} GB</span>
+				<span
+					><b class="font-medium text-ink">{fmtGB(quota.used)}</b> / {fmtGB(quota.total)}</span
+				>
 			{/if}
 		</div>
 		{#if quota.total == null}
@@ -105,9 +108,7 @@
 		{:else}
 			<Meter value={pct} />
 			<div class="flex justify-between text-[11px]">
-				<span class="text-ink-faint"
-					>{Math.max(0, quota.total - quota.used).toFixed(1)} GB free</span
-				>
+				<span class="text-ink-faint">{fmtGB(Math.max(0, quota.total - quota.used))} free</span>
 				<span class="text-ink-faint">{Math.round(pct)}%</span>
 			</div>
 		{/if}

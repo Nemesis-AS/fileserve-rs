@@ -1,6 +1,7 @@
 import * as tus from 'tus-js-client';
 import type { FilerFile, FileSection } from '$lib/types';
-import { extOf, fileCategory, fileColor } from '$lib/utils/file';
+import { extOf, fileCategory, fileColor, fmtSize } from '$lib/utils/file';
+import { serverConfig } from '$lib/stores/serverConfig.svelte';
 import { handleUnauthorized } from './session';
 
 const API = '/api/v1';
@@ -101,6 +102,14 @@ export async function searchFiles(query: string): Promise<FilerFile[]> {
 
 const TUS_CHUNK_SIZE = 5 * 1024 * 1024;
 
+/** Statuses that mean "this upload will never succeed", so don't retry them. */
+const TERMINAL_UPLOAD_STATUSES = [400, 401, 403, 404, 409, 413];
+
+/** HTTP status behind a tus error, or 0 when it was a transport failure. */
+function uploadStatus(err: unknown): number {
+	return (err as tus.DetailedError)?.originalResponse?.getStatus() ?? 0;
+}
+
 /**
  * Uploads land private; sharing is a separate step via {@link toggleShare} or
  * {@link createShareLink}. The tus endpoint has no visibility flag to set here.
@@ -110,6 +119,16 @@ export function uploadFile(
 	onProgress?: (pct: number) => void,
 	signal?: AbortSignal
 ): Promise<void> {
+	// Checked before enqueuing so an oversize file fails immediately with a
+	// sentence, instead of streaming until the server rejects the creation POST
+	// and surfacing a raw TUS error in the dock.
+	const max = serverConfig.config.maxUploadBytes;
+	if (Number.isFinite(max) && file.size > max) {
+		return Promise.reject(
+			new Error(`"${file.name}" is ${fmtSize(file.size)}, over the ${fmtSize(max)} limit`)
+		);
+	}
+
 	return new Promise((resolve, reject) => {
 		const upload = new tus.Upload(file, {
 			endpoint: `${API}/files/upload`,
@@ -124,7 +143,17 @@ export function uploadFile(
 				mime_type: file.type || 'application/octet-stream',
 				file_dir: '/'
 			},
-			onError: (err) => reject(err instanceof Error ? err : new Error(String(err))),
+			// Retry transport failures, but not a verdict. The upload routes
+			// reject on auth, ownership, and quota, and retrying any of those
+			// just burns the retry budget to arrive at the same answer.
+			onShouldRetry: (err) => !TERMINAL_UPLOAD_STATUSES.includes(uploadStatus(err)),
+			onError: (err) => {
+				// A session that expired mid-upload should log out, the same as
+				// any other 401; tus reports its own errors so nothing else
+				// routes through `apiFetch` to notice.
+				if (uploadStatus(err) === 401) handleUnauthorized();
+				reject(err instanceof Error ? err : new Error(String(err)));
+			},
 			onProgress: (sent, total) => onProgress?.(total ? (sent / total) * 100 : 0),
 			onSuccess: () => {
 				onProgress?.(100);

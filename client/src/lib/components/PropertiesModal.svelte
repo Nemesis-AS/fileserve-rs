@@ -6,6 +6,7 @@
 	import { fmtSize, fmtDateLong } from '$lib/utils/file';
 	import { createShareLink, downloadUrl } from '$lib/services/files';
 	import { authStore } from '$lib/stores/auth.svelte';
+	import { serverConfig } from '$lib/stores/serverConfig.svelte';
 	import { toastStore } from '$lib/stores/toast.svelte';
 	import { Modal } from './ui/modal/index.js';
 	import { Button } from './ui/button/index.js';
@@ -33,12 +34,29 @@
 		setTimeout(() => (copied = false), 1500);
 	}
 
-	const EXPIRY_OPTIONS = [
+	const ALL_EXPIRY_OPTIONS = [
 		{ label: '1 hour', minutes: 60 },
 		{ label: '24 hours', minutes: 1440 },
 		{ label: '7 days', minutes: 10080 }
 	];
+
+	// The server clamps these anyway; filtering keeps the menu from offering a
+	// duration it is going to silently shorten. Always leaves one option.
+	const EXPIRY_OPTIONS = $derived.by(() => {
+		const cap = serverConfig.config.demoShareMaxMinutes;
+		if (!cap) return ALL_EXPIRY_OPTIONS;
+		const allowed = ALL_EXPIRY_OPTIONS.filter((o) => o.minutes <= cap);
+		return allowed.length > 0 ? allowed : [ALL_EXPIRY_OPTIONS[0]];
+	});
+
 	let expiryMinutes = $state('1440');
+
+	// Keep the selection inside whatever the options actually offer.
+	$effect(() => {
+		if (!EXPIRY_OPTIONS.some((o) => String(o.minutes) === expiryMinutes)) {
+			expiryMinutes = String(EXPIRY_OPTIONS[0].minutes);
+		}
+	});
 	let creatingLink = $state(false);
 	let tokenLink = $state<{ url: string; expiresAt: string } | null>(null);
 	let tokenCopied = $state(false);

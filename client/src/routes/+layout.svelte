@@ -1,9 +1,15 @@
 <script lang="ts">
 	import './layout.css';
+	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
 	import { prefs } from '$lib/stores/prefs.svelte';
+	import { serverConfig } from '$lib/stores/serverConfig.svelte';
 
 	let { children } = $props();
+
+	// Loaded here, at the root, because the login page sits outside the (app)
+	// group and still needs to know whether to offer a demo account.
+	onMount(() => serverConfig.load());
 
 	const DESCRIPTION =
 		'Your files, served. A self-hosted file server with folders, uploads, previews, and trash.';
